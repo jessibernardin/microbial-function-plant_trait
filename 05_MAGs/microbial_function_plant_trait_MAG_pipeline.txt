@@ -1,0 +1,724 @@
+18 metagenomic samples (DNA#_Plant_Treatment_week) forward and reverse = 36 files
+
+
+#### TRIMMING ####
+#TRIM WITH TRIMMOMATIC
+#MULTIQC ON TRIMMED DATA
+module load trimmomatic
+for infile in *_1.fq.gz
+    do base=$(basename ${infile} _1.fq.gz)
+    java -jar $TRIM_JAR PE -threads 2 ${infile} ${base}_2.fq.gz ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:TruSeq3-PE.fa:2:40:15
+    
+
+#### MULTIQC ####
+#RUN ON RAW
+#RUN ON TRIMMED (WITH TRIMMOMATIC)
+#RUN ON RIBO DEPLETED
+
+#### RNA
+# Load the FastQC modue
+module load fastqc/0.12.1
+
+
+# Set the input directory and output directory (change this as needed)
+input_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA/paired/norrna
+output_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA/paired/norrna
+
+# Loop through all files in the input directory with the extension *fq.gz
+for file in ${input_dir}/*fq; do
+  # Run FastQC on the file
+  fastqc ${file} --outdir ${output_dir}
+done
+
+multiqc .
+
+#### DNA
+# set path to input files and output directory
+DIR=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/01_raw_data/DNA
+
+module load trimmomatic
+
+for infile in *_1.fq.gz 
+    do base=$(basename ${infile} _1.fq.gz) 
+    java -jar $TRIM_JAR PE -threads 2 ${infile} ${base}_2.fq.gz ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:TruSeq3-PE.fa:2:40:15 
+    done
+
+# Load the FastQC modue
+module load fastqc/0.12.1
+
+# Set the input directory and output directory
+input_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/DNA/paired
+output_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/DNA/paired
+
+# Loop through all files in the input directory with the extension *fq.gz
+for file in ${input_dir}/*fastq.gz; do
+  # Run FastQC on the file
+  fastqc ${file} --outdir ${output_dir}
+done
+
+#### RRNA REMOVAL WITH RIBODETECTOR ####
+# set path to input files and output directory
+DIR=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA/paired
+
+for infile in *_1.trim.fastq.gz
+    do base=$(basename ${infile} _1.trim.fastq.gz)
+ribodetector_cpu  -t 20 \
+-l 150 \
+-i ${infile} ${base}_2.trim.fastq.gz \
+-e rrna \
+-o ${base}_nonrrna_1.fq ${base}_nonrrna_2.fq
+done
+
+#### COASSEMBLY WITH MEGAHIT ####
+https://merenlab.org/tutorials/assembly-based-metagenomics/#co-assembly
+
+R1s=`ls *_1.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R1s
+
+R2s=`ls *_2.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R2s
+
+conda activate megahit
+megahit -1 $R1s -2 $R2s -m 0.85 -o ../../../07_coassembly/metaG -t 20
+
+
+
+#### QUAST/SOURMASH/MINIMAP #### 
+conda create -n assembly -c conda-forge -c bioconda \
+    quast sourmash megahit samtools minimap2
+    
+conda activate assembly
+cd ~06_minimap
+ls -lh final.contigs.fa
+quast final.contigs.fa
+cat quast_results/latest/report.txt #nice report
+
+sourmash sketch dna --name reads -o reads.sig.gz -p abund
+    
+sourmash sketch dna assembly.fa \
+    --name assembly -o assembly.sig.gz
+    
+sourmash compare *.sig.gz -o ecoli
+
+sourmash plot ecoli --labels
+
+R1s=`ls *_1.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R1s
+
+R2s=`ls *_2.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R2s
+
+minimap2 -ax sr ../../../07_coassembly/metaG/final.contigs.fa "$R1s" "$R2s"
+
+samtools flagstat reads.x.assembly.bam
+
+
+
+#### sourmash #### look at kmer frequencies and compare to GTDB
+mamba create -n smash -y -c conda-forge -c bioconda sourmash parallel
+mamba activate smash
+https://sourmash.readthedocs.io/en/latest/databases.html#downloading-and-using-the-databases
+curl -JLO https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db/gtdb-rs214/gtdb-rs214-k31.zip
+
+curl -JLO https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db/gtdb-rs214/gtdb-rs214.lineages.csv.gz
+
+input_dir="path/to/your/files/"
+output_dir="path/to/your/output/"
+
+###SOURMASH SKETCH
+# Loop through all forward sequences
+for forward_file in ${input_dir}*_1.trim.fastq.gz; do
+    sample_name=$(basename "${forward_file}" _1.trim.fastq.gz)
+    reverse_file="${input_dir}${sample_name}_2.trim.fastq.gz"
+    sourmash sketch dna -p k=31,abund "${forward_file}" "${reverse_file}" \
+        -o "${output_dir}${sample_name}.sig.gz" --name "${sample_name}"
+done
+
+ls -lh reference/gtdb-rs214-reps.k31.zip
+sourmash sig summarize reference/gtdb-rs214-reps.k31.zip
+
+tmux new -s sourmash
+control+B D
+tmux attach -t sourmash
+
+gunzip gtdb-rs214.lineages.csv.gz
+
+###SOURMASH GATHER
+for f in *.sig.gz; do sourmash gather $f reference/gtdb-rs214-k31.zip --save-matches matches.zip; done
+
+sourmash sketch dna ../07_coassembly/metaG/final.contigs.fa -o final.contigs.sig.gz --name final.contigs
+sourmash gather final.contigs.sig.gz reference/gtdb-rs214-k31.zip --save-matches matches.zip
+
+###SOURMASH GATHER
+
+#rerun but also use match.zip and save as csv, need to make individual csvs
+for f in *.sig.gz; do 
+sample_name=$(basename "${f}" .sig.gz)
+sourmash gather $f matches.zip -o "${sample_name}.x.gtdb.csv"; done
+
+# use tax metagenome to classify the metagenome (this is an alternative to GTDBtk or Kraken2 for taxononomy)
+for f in *.x.gtdb.csv; do sourmash tax metagenome -g $f -t gtdb-rs214.taxonomy.sqldb -F lineage_summary -o "${f}"; done
+
+####SOURMASH TAX ANNOTATE
+for f in *.x.gtdb.csv; do sourmash tax annotate -g $f -t gtdb-rs214.taxonomy.sqldb; done
+
+
+###sourmash MAGs
+== This is sourmash version 4.8.2. ==
+== Please cite Brown and Irber (2016), doi:10.21105/joss.00027. ==
+
+sourmash sketch dna ../../08_Binning/dastool/Run2/bins/*.fa --name-from-first
+
+for i in *.sig
+do
+    NAME=$(basename "${i}" .sig)
+    echo sourmash gather $i ../reference/gtdb-rs214-k31.zip \
+        --threshold-bp=5000 \
+        -o ${NAME}.gtdb.csv
+done | parallel
+
+sourmash tax genome -g *.gtdb.csv \
+    -t ../gtdb-rs214.taxonomy.sqldb -F lineage_csv \
+    --ani 0.8 -o MAGs
+
+
+#### MAPPING OUR READS TO THE COASSEMBLY #### 
+mamba create -n bowtie2
+mamba activate bowtie2
+mamba install bowtie2 samtools
+
+#FIRST BUILD INDEX OF ASSEMBLY
+bowtie2-build final.contigs.fa assembly
+
+# See mapping sh script
+# map using reads and contigs, create bam and bam.bai
+# A simple loop to serially map all samples.
+# referenced from within https://merenlab.org/tutorials/assembly-based-metagenomics/
+
+NUM_THREADS=4
+
+for sample in `awk '{print $1}' samples.txt`
+do
+    if [ "$sample" == "sample" ]; then continue; fi
+    R1s=`ls *_1.trim* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+    R2s=`ls *_2.trim* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+    
+    bowtie2 --threads $NUM_THREADS -x ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/assembly/assembly -1 $R1s -2 $R2s --no-unal -S ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.sam
+    samtools view -F 4 -bS ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.sam > ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample-RAW.bam
+    samtools sort ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample-RAW.bam -o ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.sorted.bam
+    samtools index ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.index.bam
+done
+
+module load samtools/1.14
+for f in *.sam; do 
+samtools view -F 4 -bS $f > $f.RAW.bam
+samtools sort $f.RAW.bam -o $sample.bam
+samtools index $sample.bam; done
+
+#### MAG MAPPING ####
+#MAKE INDEX FOR EACH OF THE 47 MAGS
+for mag_file in ../08_Binning/dastool/Run2/bins/*.fa; do
+    mag_name="${mag_file%.fa}"  # Extract MAG name without extension
+    bowtie2-build "$mag_file" "$mag_name"
+done
+
+#move all the indices into their own folder
+for filename in *; do
+    # Extract the prefix using awk
+    prefix=$(basename "$filename" | awk -F'.' '{print $1"."$2}')
+    
+    # Create a folder for the prefix
+    mkdir -p "$prefix"
+    
+    # Move the current file into the folder
+    mv "$filename" "$prefix"
+done
+
+#combine the mags
+cat *.fa > combined.bins.fa
+bowtie2-build combined.bins.fa combined.bins.index
+
+#trying something new, activate bowtie2 env and install
+mamba install -c bioconda bedtools
+
+module load samtools/1.14
+for bam_file in *.bam.bam; do
+    sample_name=$(basename "$bam_file" .sam.RAW.bam.bam)
+
+    # Calculate coverage depth using Samtools
+    samtools depth "$bam_file" > "${sample_name}_coverage.txt"
+
+    # Process coverage data and calculate average coverage
+    awk '{sum += $3} END {print sum / NR}' "${sample_name}_coverage.txt" > "${sample_name}_average_coverage.txt"
+
+    # Extract quality metrics using Samtools idxstats
+    samtools idxstats "$bam_file" > "${sample_name}_idxstats.txt"
+
+    # Process idxstats data to extract information you need
+
+    # Combine coverage and quality data into a CSV
+    echo "Contig,Sample,Average_Coverage,Quality_Metrics" > "${sample_name}_coverage_quality.csv"
+    paste contig_list.txt "${sample_name}_average_coverage.txt" "${sample_name}_idxstats.txt" >> "${sample_name}_coverage_quality.csv"
+
+    # Clean up intermediate files if needed
+    rm "${sample_name}_coverage.txt" "${sample_name}_average_coverage.txt" "${sample_name}_idxstats.txt"
+done
+
+output_combined_csv="combined_coverage_quality.csv"
+
+# Create the header for the combined CSV file
+echo "Contig,Sample,Average_Coverage,Quality_Metrics" > combined_coverage_quality.csv
+
+# Loop through each sample's CSV file and append its content to the combined CSV
+for sample_csv in *_coverage_quality.csv; do
+    sample_name=$(basename "$sample_csv" _coverage_quality.csv)
+    awk -v sample="$sample_name" '{print $0","sample}' "$sample_csv" >> combined_coverage_quality.csv
+done
+
+
+
+#### BINNING #### 
+mamba create --name binning -y -c conda-forge -c bioconda concoct maxbin2 metabat2 das_tool
+mamba activate binning
+
+## MAXBIN2 ##
+https://sourceforge.net/projects/maxbin2/files/
+
+for f in *_1.trim.fastq.gz
+do
+sample=$(basename "${f}" _1.trim.fastq.gz)
+    forward_reads="${sample}_1.trim.fastq.gz"
+    reverse_reads="${sample}_2.trim.fastq.gz"
+
+run_MaxBin.pl -thread 8 -contig ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/final.contigs.fa -reads "$forward_reads" -reads2 "$reverse_reads" -out ~/scratch/03_Exp1_metagenomics/08_Binning/maxbin/
+done
+
+
+## CONCOCT ##
+#The next step is then to cut contigs into smaller parts:
+cut_up_fasta.py ../../07_coassembly/metaG/final.contigs.fa -c 10000 -o 0 --merge_last -b contigs_10K.bed > contigs_10K.fa
+
+#Generate table with coverage depth information per sample and subcontig. This step assumes the directory ‘mapping’ contains sorted and indexed bam files where each sample has been mapped against the original contigs:
+concoct_coverage_table.py contigs_10K.bed ../../07_coassembly/metaG/Sample*.bam.bam > metaG.coverage_table.tsv
+concoct --composition_file contigs_10K.fa --coverage_file metaG.coverage_table.tsv -b concoct_output/
+
+#Merge subcontig clustering into original contig clustering:
+merge_cutup_clustering.py concoct_output/clustering_gt1000.csv > concoct_output/clustering_merged.csv
+
+#Extract bins as individual FASTA:
+mkdir concoct_output/fasta_bins
+extract_fasta_bins.py ../../07_coassembly/metaG/final.contigs.fa concoct_output/clustering_merged.csv --output_path concoct_output/fasta_bins
+
+PROBLEMS WITH STRING NAMES
+INSTALLED NEW CONCOCT ENVIRONMENT USING CONCOCT.YAML
+TRYING AGAIN
+
+Had to edit the env .py
+
+in mamba_forge/envs/concoct/lib/python3.10/site-packages/sklearn/utils/validation.py.
+on line 1858 I changed the following:
+feature_names = np.asarray(X.columns, dtype=object) to
+feature_names = np.asarray(X.columns.astype(str), dtype=object)
+
+
+## METABAT2 ##
+runMetaBat.sh --minSamples 3 AlgaeAssembly/contigs.fasta *bam
+
+runMetaBat.sh ../../07_coassembly/metaG/final.contigs.fa ../../07_coassembly/metaG/*.bam.bam
+ METABAT WORKED!!!DONE
+
+#### CHECKM ####
+conda create -n checkm python=3.9
+conda activate checkm
+conda install -c bioconda numpy matplotlib pysam
+conda install -c bioconda hmmer prodigal pplacer
+pip3 install checkm-genome
+
+
+checkm taxonomy_wf domain Bacteria -x fasta MAXBIN/ CHECKM/
+
+#### CHECKM2 ####
+mamba create -n checkm2 -c bioconda -c conda-forge checkm2
+conda activate checkm2
+checkm2 database --download
+checkm2 predict --threads 30 --input ../dastool/Run2/bins/*.fa --output-directory checkm2_dastool/
+
+
+#### dREP ####
+mamba create -n drep
+mamba activate drep
+mamba install -c bioconda drep
+dRep compare drep_compare/ -g ../dastool/Run2/bins/*.fa
+
+#checkm not working, so activated checkm environment, installed drep inside this env and then ran
+dRep dereplicate derep/ -g ../../dastool/Run2/bins/*.fa
+
+mamba activate checkm2
+checkm2 predict --threads 30 --input dereplicated_genomes/*.fa --output-directory checkm2_derep_bins/
+#### DASTOOL ####
+https://github.com/cmks/DAS_Tool
+mamba activate binning
+
+#rename the bins (binner.number.fa)
+rename 0 maxbin. *fasta
+rename .fasta .fa *fasta
+
+for file in *.fa; do
+    new_name="concoct.$file"
+    mv "$file" "$new_name"
+done
+
+## do this for all three binners (maxbin, metabat, concoct)
+for file in *fa; do
+    filename=$(basename "$file")
+    sample=$(echo "$filename" | cut -d '_' -f 1) 
+    grep -E '^>' "$file" | sed "s/>//" | awk -v sample="$sample" '{print $1 "\t" sample}'
+done > metabat2_contig_list.txt
+
+#clean up assembly
+awk '/^>/ {sub(/ .*/, ""); print} /^[^>]/' ../../07_coassembly/metaG/final.contigs.fa > extracted_contigs.fa
+
+#run dastool
+
+mamba create --name dastool -y -c conda-forge -c bioconda das_tool
+mamba activate dastool
+
+#make sure no spaces after comma
+DAS_Tool  -i concoct.contigs2bin.tsv,metabat.contigs2bin.tsv,maxbin.contigs2bin.tsv -l concoct,metabat,maxbin -c extracted_contigs.final.fasta -o DASToolRun1
+
+
+
+#### PRODIGAL #### 
+conda activate prodigal
+prodigal -a metaG.contigs.faa -d metaG.contigs.fna -i ../../07_coassembly/metaG/final.contigs.fa  -o metaG.contigs.gff -p meta
+
+repeat for metaT
+
+
+
+QUANTIFICATION USING SALMONv1.10.2
+conda activate salmon
+
+salmon index -t ~/scratch/03_Exp1_metagenomics/09_Prodigal/metaG/metaG.contigs.fna -i metagenome_assembly_all_salmonDB -p 56
+
+
+for fastq in ~/scratch/03_Exp1_metagenomics/03_Trim/DNA/paired/*_1.trim.fastq.gz ; do  salmon quant -i metagenome_assembly_all_salmonDB  -l A -1 ${fastq} -2 ${fastq/_1/_2}  -p 56 -o $(basename $fastq |  sed 's/_1.trim.fastq.gz/_mapping_salmon/') --gcBias  ; done
+
+
+for i in ./*_salmon/quant.sf ; do cut -f1,5 $i > ./counts/$(dirname "$i" | sed 's/.\///g' | sed 's/_mapping_salmon//'); done
+for i in ./*_salmon/quant.sf ; do cut -f1,4 $i > ./TPM/$(dirname "$i" | sed 's/.\///g' | sed 's/_mapping_salmon//') ; done
+python /home/cardena/scripts/MergingMultipleTables.py . .
+
+## counts grouped table
+for i in *_salmon/quant.sf; do
+  output_file="$(basename "$(dirname "$i")" | sed 's/_mapping_salmon//').counts.txt"
+  
+  cut -f1,5 "$i" > "$output_file"
+done
+
+sample_names=()
+for sample_file in *.counts.txt; do
+  sample_name=$(basename "$sample_file" .counts.txt)
+  sample_names+=("$sample_name")
+done
+
+# Create the merged output file and add header with sample names
+echo -n -e "GeneName\t${sample_names[*]}\n" > merged_output.txt
+
+# Iterate through gene names
+for gene in $(cut -f1 "${sample_names[0]}.counts.txt"); do
+  # Initialize the line with gene name
+  line="$gene"
+
+  # Iterate through sample names and add corresponding NumReads
+  for sample_name in "${sample_names[@]}"; do
+    num_reads=$(grep -w "$gene" "${sample_name}.counts.txt" | cut -f2)
+    line="$line\t$num_reads"
+  done
+
+  # Append the line to the merged output file
+  echo -e "$line" >> merged_output.txt
+done
+
+
+#### tpm grouped table ####
+for i in *_salmon/quant.sf; do
+  output_file="$(basename "$(dirname "$i")" | sed 's/_mapping_salmon//').tpm.txt"
+  
+  cut -f1,4 "$i" > "$output_file"
+done
+
+sample_names=()
+for sample_file in *.tpm.txt; do
+  sample_name=$(basename "$sample_file" .tpm.txt)
+  sample_names+=("$sample_name")
+done
+
+# Create the merged output file and add header with sample names
+echo -n -e "Name\t${sample_names[*]}\n" > merged_tpm.txt
+
+# Iterate through gene names
+for gene in $(cut -f1 "${sample_names[0]}.tpm.txt"); do
+  line="$gene"
+  ''
+  
+  for sample_name in "${sample_names[@]}"; do
+    num_reads=$(grep -w "$gene" "${sample_name}.tpm.txt" | cut -f2)
+    line="$line\t$num_reads"
+  done
+  echo -e "$line" >> merged_tpm.txt
+done
+
+#convert txt to csv
+sed 's/\t/,/g' .txt > .csv
+
+
+
+#### Kallisto #### 
+https://pachterlab.github.io/kallisto/starting.html
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6011919/The coding sequences predicted from contigs of the combined assembly of the four metagenome samples (see Stolze et al., 2016) were used as input to build the transcriptome index using kallisto index
+conda create --name kallisto
+conda activate kallisto
+conda install kallisto
+conda update kallisto
+mkdir 10_Kallisto
+
+kallisto index -i transcripts.idx ../../07_coassembly/metaT/final.contigs.fa
+
+for file in *.trim.fastq.gz;
+  do kallisto quant -i transcripts.idx -o "${file}-aligned" "${file}";
+done
+
+# copy the index to the folder with the files
+# Iterate over the paired-end files
+for file in *_nonrrna_1.fq; do
+    mate_file="${file/_nonrrna_1.fq/_nonrrna_2.fq}"
+    sample_name="${file%_nonrrna_1.fq}"
+    kallisto quant -i transcripts.idx -o "${sample_name}-aligned" "$file" "$mate_file"
+done
+
+#merge into one tsv
+paste */abundance.tsv | cut -f 1,2,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140 > transcript_tpms_all_samples.tsv
+ls -1 */abundance.tsv | perl -ne 'chomp $_; if ($_ =~ /(\S+)\/abundance\.tsv/){print "\t$1"}' | perl -ne 'print "target_id\tlength$_\n"' > header.tsv
+cat header.tsv transcript_tpms_all_samples.tsv | grep -v "tpm" > transcript_tpms_all_samples.tsv2
+mv transcript_tpms_all_samples.tsv2 transcript_tpms_all_samples.tsv
+rm -f header.tsv
+
+#### KOFAMSCAN #### 
+#https://taylorreiter.github.io/2019-05-11-kofamscan/
+wget ftp://ftp.genome.jp/pub/db/kofam/ko_list.gz		# download the ko list 
+wget ftp://ftp.genome.jp/pub/db/kofam/profiles.tar.gz 		# download the hmm profiles
+wget ftp://ftp.genome.jp/pub/tools/kofam_scan/kofam_scan-1.3.0.tar.gz # download kofamscan tool
+wget ftp://ftp.genome.jp/pub/tools/kofamscan/README.md		# download README
+
+gunzip ko_list.gz
+tar xf profiles.tar.gz
+tar xf kofam_scan-1.3.0.tar.gz
+
+conda create -n kofamscan kofamscan hmmer parallel
+conda activate kofamscan
+conda install -c conda-forge ruby
+
+vim config.yml
+# Path to your KO-HMM database
+# A database can be a .hmm file, a .hal file or a directory in which
+# .hmm files are. Omit the extension if it is .hal or .hmm file
+profile: ./profiles
+
+# Path to the KO list file
+ko_list: /bsuhome/jessicabernardin/miniconda3/pkgs/kofamscan-1.3.0-hdfd78af_2/bin/ko_list
+
+# Path to an executable file of hmmsearch
+# You do not have to set this if it is in your $PATH
+hmmsearch: /bsuhome/jessicabernardin/miniconda3/envs/kofamscan/bin/hmmsearch
+
+# Path to an executable file of GNU parallel
+# You do not have to set this if it is in your $PATH
+parallel: /bsuhome/jessicabernardin/miniconda3/envs/kofamscan/bin/parallel
+
+# Number of hmmsearch processes to be run parallelly
+cpu: 48
+
+As for how many tasks, cpus, and how much memory to specify, since kofamscan is using parallel, I would recommend using the whole node 
+(the biocomp node has 48 cpu cores). You could specify the memory per cpu 
+(the biocomp node has 192GB, so 192GB/48 and giving some room for system processes would be ~3GB), 
+but I think not specifying this and allowing the job to go with the default will be fine.
+
+
+kofamscan.sh
+
+# Activate the conda environment
+. ~/.bashrc
+conda activate kofamscan
+
+# This was submitted from within the ~/scratch/kofamscan-test directory
+~/miniconda3/pkgs/kofamscan-1.3.0-hdfd78af_2/bin/exec_annotation -c config.yml ~/scratch/03_Exp1_metagenomics/09_Prodigal/metaT/metaT.contigs.faa
+moved kofamscan output to desktop
+opened R
+
+https://www.genome.jp/kegg-bin/get_htext?ko00001.keg
+
+or 
+
+wget 'https://www.genome.jp/kegg-bin/download_htext?htext=ko00001&format=htext&filedir=' -O ko00001.keg
+
+kegfile="ko00001.keg"
+while read -r prefix content
+do
+    case "$prefix" in A) col1="$content";; \
+                      B) col2="$content" ;; \
+                      C) col3="$content";; \
+                      D) echo -e "$col1\t$col2\t$col3\t$content";;
+    esac 
+done < <(sed '/^[#!+]/d;s/<[^>]*>//g;s/^./& /' < "$kegfile") > KO_Orthology_ko00001.txt
+
+bioawk -c fastx '{print $name, length($seq)}' < metaT.contigs.fna > metaT_contig_length
+
+
+#### GTDBtk for taxonomic profiling ####
+https://github.com/Ecogenomics/GTDBTk
+https://ecogenomics.github.io/GTDBTk/
+
+mamba create -n gtdbtk-2.1.1 -c conda-forge -c bioconda gtdbtk=2.1.1
+mamba activate gtdbtk-2.1.1
+
+
+
+
+
+
+
+
+#### HUMANN 3.0 #### 
+For both the meta-DNASeq and Meta-RNASeq we computed pathway abundances using HUMAnN 3.0 (Beghini et al. 2021), which uses the MetaPhlAn classifier  using the UniRef 90 database. We ran cleaned, filtered, and concatenated samples in humann3.0 using –remove-strafified-outputs to bypass the taxonomic classifier option. We mapped gene families to MetaCyc reactions, metabolic pathways, and KEGG orthologies (KO). We joined samples into one table and normalized using relative abundance (as suggested by HUMAnN manual). 
+https://huttenhower.sph.harvard.edu/humann/
+https://github.com/biobakery/biobakery/wiki/humann3
+
+conda create --name biobakery python=3.7
+conda activate biobakery
+conda config --add channels defaults
+conda config --add channels bioconda
+XXX DON'T DO THIS ONE = conda config --add channels conda-forge
+conda config --add channels biobakery
+
+
+pip install humann --no-binary :all:
+pip install MetaPhlAn
+
+humann_test
+#navigate to demo.fastq directory
+humann -i demo.fastq -o sample_results
+
+#upgrade databases
+humann_databases --download chocophlan full /path/to/databases --update-config yes
+humann_databases --download uniref uniref90_diamond /path/to/databases --update-config yes
+humann_databases --download utility_mapping full /path/to/databases --update-config yes
+
+#run an analysis
+humann -i sample_reads.fastq -o sample_results
+or
+humann -i sample_reads.fastq -o sample_results --remove-stratified-outputs
+
+#many samples
+cat sample_R1.fq sample_R2.fq > merge_sample.fq  
+
+#use merged samples for humann analysis
+#stratified by taxonomy
+for f in *.fasta; do humann -i $f -o hmp_subset; done
+or 
+#not stratified by taxonomy
+for f in *.fasta; do humann -i $f -o metaT --remove-stratified-outputs
+; done
+
+#join the tables (do this for genefamilies, then also for pathabundance, and pathcoverage files)
+humann_join_tables -i metaG -o metaG_genefamilies.tsv --file_name genefamilies
+
+#normalize either cpm or relab, you pick (do this for genefamilies, then also for pathabundance, and pathcoverage files)
+humann_renorm_table -i metaT_genefamilies.tsv -o metaT_genefamilies-cpm.tsv --units cpm
+or
+humann_renorm_table -i metaT_genefamilies.tsv -o metaT_genefamilies-cpm.tsv --units relab
+
+#download to look at KO, you can download different ones
+humann_databases --download utility_mapping full .
+
+#run this with normalized joined genefamilies
+humann_regroup_table --input metaT_genefamilies.tsv --groups uniref90_ko --output metaT_KO.tsv
+
+#metaT
+# set path to input files and output directory
+DIR=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA/merged
+for i in *_merge.fastq.gz; do humann --input "$i" --output ../../../11_humann/output_non_stratified --remove-stratified-output; done
+
+#metaG
+# set path to input files and output directory
+DIR=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/DNA/merged
+for i in *.merged.fastq.gz; do humann --input "$i" --output ../../../11_humann/output_non_stratified/metaG --remove-stratified-output; done
+
+#################################################################################################################################
+
+
+# Loop through each MAG file and add the mag name after each header
+for input_file in *.fa; do
+    # Extract the filename without the extension
+    new_name="${input_file%.fa}"
+    
+    # Read the file line by line
+    while IFS= read -r line; do
+        # Check if the line is a header line
+        if [[ $line == ">"* ]]; then
+            # Modify the header by appending the new name
+            echo "$line"_"$new_name"
+        else
+            echo "$line"
+        fi
+    done < "$input_file" > modified_mags/"$new_name"_modified.fa
+done
+
+
+cat *_modified.fa > mag.combined.fa
+
+#### MAPPING FUNCTIONS TO MAGS ####
+
+mamba create -n blast 
+mamba activate blast
+mamba install -c bioconda blast
+mamba install -c conda-forge dos2unix
+
+#make a custom database using my MAGs
+makeblastdb -in mag.combined.fa -dbtype nucl -out mag.db
+
+#get the significant contigs from dream and filter the coassembly then do a blast
+# Extract contig names from CSV and save them to a text file
+cut -d ',' -f 1 KO_dream_sig_kofamscan_genes.csv | tail -n +2 > dream_sig_transcripts.txt
+dos2unix dream_sig_transcripts.txt
+# Use grep to filter the coassembly.fa using the list of contig names
+grep -A 1 -w -f dream_sig_transcripts.txt -F final.contigs.fa > filtered_coassembly.fa
+grep -A 1 -w -f dream_sig_transcripts.txt -F ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/final.contigs.fa > filtered_sig_metaT_coassembly.fa
+grep -c '^>' filtered_coassembly.fa #5432
+grep -c '^>' final.contigs.fa #145861
+
+wc -1
+blastn -db db/mag.db -query filtered_metaT_coassembly.fa -outfmt "6 qseqid sseqid pident bitscore evalue" -out blast_output.csv
+
+#23403 blast_output.csv
+
+
+#repeat with all the transcripts
+# Extract contig names from CSV and save them to a text file
+cut -d ',' -f 1 KO_dream_sig_kofamscan_genes.csv | tail -n +2 > dream_all_transcripts.txt
+dos2unix dream_sig_transcripts.txt
+# Use grep to filter the coassembly.fa using the list of contig names
+grep -A 1 -w -f dream_all_transcripts.txt -F ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/final.contigs.fa > filtered_all_metaT_coassembly.fa
+grep -c '^>' filtered_all_metaT_coassembly.fa #145860
+grep -c '^>' final.contigs.fa #145861
+
+wc -1
+blastn -db db/mag.db -query filtered_all_metaT_coassembly.fa -outfmt "6 qseqid sseqid pident bitscore evalue" -out blast_output.csv
+
+#23403 blast_output.csv
+
+
+
+https://merenlab.org/2020/01/02/visualizing-metagenomic-bins/
+
+

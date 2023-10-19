@@ -1,0 +1,122 @@
+
+
+wget https://data.qiime2.org/distro/core/qiime2-2022.8-py38-linux-conda.yml
+conda env create -n qiime2-2022.8 --file qiime2-2022.8-py38-linux-conda.yml
+rm qiime2-2022.8-py38-linux-conda.yml
+conda activate qiime2-2022.8
+
+
+make directory for sequences
+
+use Filezilla to transfer metadata
+- metadata made in google sheets (not excel)
+- checked with keemei
+
+transfered zipped file for sequences to sequence directory
+
+unzip file
+
+these are the files:
+Undetermined_S0_L001_I1_001.fastq.gz  Undetermined_S0_L001_R1_001.fastq.gz  Undetermined_S0_L001_R2_001.fastq.gz
+
+rename files:
+barcodes.fastq.gz  forward.fastq.gz  reverse.fastq.gz
+
+qiime tools import \
+--type EMPPairedEndSequences \
+--input-path 01_ANL_sequences/ \
+--output-path Exp1_metabarcoding_jrb.qza
+
+ qiime demux emp-paired 
+ --i-seqs Exp1_metabarcoding_jrb.qza 
+ --m-barcodes-file metadata_Bittleston_16s_DG_220822.tsv 
+ --m-barcodes-column BarcodeSequence 
+ --o-per-sample-sequences demux.qza 
+ --p-no-golay-error-correction 
+ --output-dir demux_output
+
+qiime demux summarize \
+  --i-data demux.qza \
+  --o-visualization demux.qzv
+  
+  Do this (above) on local machine
+  conda activate qiime2-2022.2
+  qiime tools view demux.qzv
+  download tsv of quality report from html
+  
+  use the quality plots to decide how to trim, look for mean scores below 20
+  
+qiime dada2 denoise-paired \
+ --i-demultiplexed-seqs demux.qza \
+ --p-trim-left-f 0 \
+ --p-trim-left-r 0 \
+ --p-trunc-len-f 150 \
+ --p-trunc-len-r 150 \
+ --p-n-threads 10 \
+ --o-table table-dada2.qza \
+ --o-representative-sequences rep-seqs-dada2.qza \
+ --o-denoising-stats stats-dada2.qza
+
+ qiime tools export \
+> --input-path table-dada2.qza \
+> --output-path exported-files
+
+biom convert -i exported-files/feature-table.biom -o exported-files/asv-table-dada2.txt --to-tsv
+
+qiime feature-table tabulate-seqs \
+  --i-data rep-seqs-dada2.qza \
+  --o-visualization rep-seqs-dada2.qzv
+
+
+Taxonomy
+first train classifier
+mkdir 02_training_feature_classifiers
+
+Silva 138 99% OTUs from 515F/806R region of sequences (MD5: e05afad0fe87542704be96ff483824d4)
+https://data.qiime2.org/2022.8/common/silva-138-99-515-806-nb-classifier.qza
+
+wget https://data.qiime2.org/2022.8/common/silva-138-99-515-806-nb-classifier.qza
+
+$ export TMPDIR=/local
+
+qiime feature-classifier classify-sklearn \
+  --i-classifier 02_training_feature_classifiers/silva-138-99-515-806-nb-classifier.qza \
+  --i-reads rep-seqs-dada2.qza \
+  --o-classification taxonomy-dada2.qza
+
+qiime metadata tabulate \
+  --m-input-file  stats-dada2.qza \
+  --o-visualization  stats-dada2.qzv
+
+qiime taxa barplot \
+  --i-table table-dada2.qza \
+  --i-taxonomy taxonomy-dada2.qza \
+  --m-metadata-file metadata_Bittleston_16s_DG_220822.tsv \
+  --o-visualization taxa-bar-plots-dada2.qzv
+
+qiime tools export \
+  --input-path rep-seqs-dada2.qza \
+  --output-path exported-files
+
+qiime metadata tabulate \
+  --m-input-file taxonomy-dada2.qza \
+  --o-visualization taxonomy-dada2.qzv
+
+qiime tools export \
+--input-path taxonomy-dada2.qza \
+--output-path exported-files
+
+qiime phylogeny align-to-tree-mafft-fasttree \
+  --i-sequences rep-seqs.qza \
+  --o-alignment aligned-rep-seqs.qza \
+  --o-masked-alignment masked-aligned-rep-seqs.qza \
+  --o-tree unrooted-tree.qza \
+  --o-rooted-tree rooted-tree.qza
+
+qiime tools export \
+--input-path unrooted-tree.qza \
+--output-path exported-files
+
+qiime tools export \
+--input-path rooted-tree.qza \
+--output-path exported-files

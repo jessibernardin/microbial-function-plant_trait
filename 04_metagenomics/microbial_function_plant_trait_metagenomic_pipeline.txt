@@ -1,0 +1,112 @@
+18 metagenomic samples (DNA#_Plant_Treatment_week) forward and reverse = 36 files
+
+
+#### TRIMMING ####
+#### DNA
+# set path to input files and output directory
+DIR=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/01_raw_data/DNA
+
+module load trimmomatic
+
+for infile in *_1.fq.gz 
+    do base=$(basename ${infile} _1.fq.gz) 
+    java -jar $TRIM_JAR PE -threads 2 ${infile} ${base}_2.fq.gz ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:TruSeq3-PE.fa:2:40:15 
+    done
+
+# Load the FastQC modue
+module load fastqc/0.12.1
+
+# Set the input directory and output directory
+input_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/DNA/paired
+output_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/DNA/paired
+
+# Loop through all files in the input directory with the extension *fq.gz
+for file in ${input_dir}/*fastq.gz; do
+  # Run FastQC on the file
+  fastqc ${file} --outdir ${output_dir}
+done
+
+multiqc .
+
+#### COASSEMBLY WITH MEGAHIT ####
+https://merenlab.org/tutorials/assembly-based-metagenomics/#co-assembly
+
+R1s=`ls *_1.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R1s
+
+R2s=`ls *_2.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R2s
+
+conda activate megahit
+megahit -1 $R1s -2 $R2s -m 0.85 -o ../../../07_coassembly/metaG -t 20
+
+
+#### sourmash #### look at kmer frequencies and compare to GTDB
+mamba create -n smash -y -c conda-forge -c bioconda sourmash parallel
+mamba activate smash
+https://sourmash.readthedocs.io/en/latest/databases.html#downloading-and-using-the-databases
+
+curl -JLO https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db/gtdb-rs214/gtdb-rs214-k31.zip
+curl -JLO https://farm.cse.ucdavis.edu/~ctbrown/sourmash-db/gtdb-rs214/gtdb-rs214.lineages.csv.gz
+
+input_dir="path/to/your/files/"
+output_dir="path/to/your/output/"
+
+###SOURMASH SKETCH
+# Loop through all forward sequences
+for forward_file in ${input_dir}*_1.trim.fastq.gz; do
+    sample_name=$(basename "${forward_file}" _1.trim.fastq.gz)
+    reverse_file="${input_dir}${sample_name}_2.trim.fastq.gz"
+    sourmash sketch dna -p k=31,abund "${forward_file}" "${reverse_file}" \
+        -o "${output_dir}${sample_name}.sig.gz" --name "${sample_name}"
+done
+
+ls -lh reference/gtdb-rs214-reps.k31.zip
+sourmash sig summarize reference/gtdb-rs214-reps.k31.zip
+
+gunzip gtdb-rs214.lineages.csv.gz
+
+###SOURMASH GATHER
+for f in *.sig.gz; do 
+sample_name=$(basename "${f}" .sig.gz)
+sourmash gather $f matches.zip -o "${sample_name}.x.gtdb.csv"; done
+
+# use tax metagenome to classify the metagenome (this is an alternative to GTDBtk or Kraken2 for taxononomy)
+for f in *.x.gtdb.csv; do sourmash tax metagenome -g $f -t gtdb-rs214.taxonomy.sqldb -F lineage_summary -o "${f}"; done
+
+####SOURMASH TAX ANNOTATE
+for f in *.x.gtdb.csv; do sourmash tax annotate -g $f -t gtdb-rs214.taxonomy.sqldb; done
+
+#transfer these files into R and run metagenomic_taxonomy.R script for relative abundance
+
+#### MAPPING OUR READS TO THE COASSEMBLY #### 
+mamba create -n bowtie2
+mamba activate bowtie2
+mamba install bowtie2 samtools
+
+#FIRST BUILD INDEX OF ASSEMBLY
+bowtie2-build final.contigs.fa assembly
+
+# map using reads and contigs, create bam and bam.bai
+# A simple loop to serially map all samples.
+# referenced from within https://merenlab.org/tutorials/assembly-based-metagenomics/
+
+NUM_THREADS=4
+
+for sample in `awk '{print $1}' samples.txt`
+do
+    if [ "$sample" == "sample" ]; then continue; fi
+    R1s=`ls *_1.trim* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+    R2s=`ls *_2.trim* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+    
+    bowtie2 --threads $NUM_THREADS -x ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/assembly/assembly -1 $R1s -2 $R2s --no-unal -S ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.sam
+    samtools view -F 4 -bS ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.sam > ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample-RAW.bam
+    samtools sort ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample-RAW.bam -o ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.sorted.bam
+    samtools index ~/scratch/03_Exp1_metagenomics/07_coassembly/metaG/$sample.index.bam
+done
+
+module load samtools/1.14
+for f in *.sam; do 
+samtools view -F 4 -bS $f > $f.RAW.bam
+samtools sort $f.RAW.bam -o $sample.bam
+samtools index $sample.bam; done

@@ -1,0 +1,179 @@
+28 metatranscriptomic samples (27 samples and one negative control) (RNA#_Plant_Treatment_week) forward and reverse = 56 files
+
+#### TRIMMING ####
+# Load the FastQC modue
+module load fastqc/0.12.1
+
+# Set the input directory and output directory (change this as needed)
+input_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA
+output_dir=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA
+
+# Loop through all files in the input directory with the extension *fq.gz
+for file in ${input_dir}/*fq; do
+  # Run FastQC on the file
+  fastqc ${file} --outdir ${output_dir}
+done
+
+multiqc .
+
+module load trimmomatic
+for infile in *_1.fq.gz
+    do base=$(basename ${infile} _1.fq.gz)
+    java -jar $TRIM_JAR PE -threads 2 ${infile} ${base}_2.fq.gz ${base}_1.trim.fastq.gz ${base}_1un.trim.fastq.gz ${base}_2.trim.fastq.gz ${base}_2un.trim.fastq.gz SLIDINGWINDOW:4:20 MINLEN:25 ILLUMINACLIP:TruSeq3-PE.fa:2:40:15
+    
+#### RRNA REMOVAL WITH RIBODETECTOR ####
+# set path to input files and output directory
+DIR=/bsuhome/jessicabernardin/scratch/03_Exp1_metagenomics/03_Trim/RNA/paired
+
+for infile in *_1.trim.fastq.gz
+    do base=$(basename ${infile} _1.trim.fastq.gz)
+ribodetector_cpu  -t 20 \
+-l 150 \
+-i ${infile} ${base}_2.trim.fastq.gz \
+-e rrna \
+-o ${base}_nonrrna_1.fq ${base}_nonrrna_2.fq
+done
+
+#### COASSEMBLY WITH MEGAHIT ####
+https://merenlab.org/tutorials/assembly-based-metagenomics/#co-assembly
+
+R1s=`ls *_1.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R1s
+
+R2s=`ls *_2.* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+echo $R2s
+
+conda activate megahit
+megahit -1 $R1s -2 $R2s -m 0.85 -o ../../../07_coassembly/metaT -t 20
+
+
+#### MAPPING OUR READS TO THE COASSEMBLY #### 
+mamba create -n bowtie2
+mamba activate bowtie2
+mamba install bowtie2 samtools
+
+#FIRST BUILD INDEX OF ASSEMBLY
+bowtie2-build final.contigs.fa assembly
+
+# map using reads and contigs, create bam and bam.bai
+# A simple loop to serially map all samples.
+# referenced from within https://merenlab.org/tutorials/assembly-based-metagenomics/
+
+NUM_THREADS=4
+
+for sample in `awk '{print $1}' samples.txt`
+do
+    if [ "$sample" == "sample" ]; then continue; fi
+    R1s=`ls *_1.trim* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+    R2s=`ls *_2.trim* | python -c 'import sys; print(",".join([x.strip() for x in sys.stdin.readlines()]))'`
+    
+    bowtie2 --threads $NUM_THREADS -x ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/assembly/assembly -1 $R1s -2 $R2s --no-unal -S ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/$sample.sam
+    samtools view -F 4 -bS ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/$sample.sam > ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/$sample-RAW.bam
+    samtools sort ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/$sample-RAW.bam -o ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/$sample.sorted.bam
+    samtools index ~/scratch/03_Exp1_metagenomics/07_coassembly/metaT/$sample.index.bam
+done
+
+module load samtools/1.14
+for f in *.sam; do 
+samtools view -F 4 -bS $f > $f.RAW.bam
+samtools sort $f.RAW.bam -o $sample.bam
+samtools index $sample.bam; done
+
+#### PRODIGAL #### 
+conda activate prodigal
+prodigal -a metaT.contigs.faa -d metaT.contigs.fna -i ../../07_coassembly/metaT/final.contigs.fa  -o metaT.contigs.gff -p meta
+
+#### Kallisto #### 
+https://pachterlab.github.io/kallisto/starting.html
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6011919/The coding sequences predicted from contigs of the combined assembly of the four metagenome samples (see Stolze et al., 2016) were used as input to build the transcriptome index using kallisto index
+conda create --name kallisto
+conda activate kallisto
+conda install kallisto
+conda update kallisto
+mkdir 10_Kallisto
+
+kallisto index -i transcripts.idx ../../07_coassembly/metaT/final.contigs.fa
+
+for file in *.trim.fastq.gz;
+  do kallisto quant -i transcripts.idx -o "${file}-aligned" "${file}";
+done
+
+# copy the index to the folder with the files
+# Iterate over the paired-end files
+for file in *_nonrrna_1.fq; do
+    mate_file="${file/_nonrrna_1.fq/_nonrrna_2.fq}"
+    sample_name="${file%_nonrrna_1.fq}"
+    kallisto quant -i transcripts.idx -o "${sample_name}-aligned" "$file" "$mate_file"
+done
+
+#merge into one tsv
+paste */abundance.tsv | cut -f 1,2,5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140 > transcript_tpms_all_samples.tsv
+ls -1 */abundance.tsv | perl -ne 'chomp $_; if ($_ =~ /(\S+)\/abundance\.tsv/){print "\t$1"}' | perl -ne 'print "target_id\tlength$_\n"' > header.tsv
+cat header.tsv transcript_tpms_all_samples.tsv | grep -v "tpm" > transcript_tpms_all_samples.tsv2
+mv transcript_tpms_all_samples.tsv2 transcript_tpms_all_samples.tsv
+rm -f header.tsv
+
+#### KOFAMSCAN #### 
+#https://taylorreiter.github.io/2019-05-11-kofamscan/
+wget ftp://ftp.genome.jp/pub/db/kofam/ko_list.gz		# download the ko list 
+wget ftp://ftp.genome.jp/pub/db/kofam/profiles.tar.gz 		# download the hmm profiles
+wget ftp://ftp.genome.jp/pub/tools/kofam_scan/kofam_scan-1.3.0.tar.gz # download kofamscan tool
+wget ftp://ftp.genome.jp/pub/tools/kofamscan/README.md		# download README
+
+gunzip ko_list.gz
+tar xf profiles.tar.gz
+tar xf kofam_scan-1.3.0.tar.gz
+
+conda create -n kofamscan kofamscan hmmer parallel
+conda activate kofamscan
+conda install -c conda-forge ruby
+
+vim config.yml
+# Path to your KO-HMM database
+# A database can be a .hmm file, a .hal file or a directory in which
+# .hmm files are. Omit the extension if it is .hal or .hmm file
+profile: ./profiles
+
+# Path to the KO list file
+ko_list: /bsuhome/jessicabernardin/miniconda3/pkgs/kofamscan-1.3.0-hdfd78af_2/bin/ko_list
+
+# Path to an executable file of hmmsearch
+# You do not have to set this if it is in your $PATH
+hmmsearch: /bsuhome/jessicabernardin/miniconda3/envs/kofamscan/bin/hmmsearch
+
+# Path to an executable file of GNU parallel
+# You do not have to set this if it is in your $PATH
+parallel: /bsuhome/jessicabernardin/miniconda3/envs/kofamscan/bin/parallel
+
+# Number of hmmsearch processes to be run parallelly
+cpu: 48
+
+
+kofamscan.sh
+
+# Activate the conda environment
+. ~/.bashrc
+conda activate kofamscan
+
+~/miniconda3/pkgs/kofamscan-1.3.0-hdfd78af_2/bin/exec_annotation -c config.yml ~/scratch/03_Exp1_metagenomics/09_Prodigal/metaT/metaT.contigs.faa
+moved kofamscan output to desktop
+opened R
+
+https://www.genome.jp/kegg-bin/get_htext?ko00001.keg
+
+or 
+
+wget 'https://www.genome.jp/kegg-bin/download_htext?htext=ko00001&format=htext&filedir=' -O ko00001.keg
+
+kegfile="ko00001.keg"
+while read -r prefix content
+do
+    case "$prefix" in A) col1="$content";; \
+                      B) col2="$content" ;; \
+                      C) col3="$content";; \
+                      D) echo -e "$col1\t$col2\t$col3\t$content";;
+    esac 
+done < <(sed '/^[#!+]/d;s/<[^>]*>//g;s/^./& /' < "$kegfile") > KO_Orthology_ko00001.txt
+
+bioawk -c fastx '{print $name, length($seq)}' < metaT.contigs.fna > metaT_contig_length
+
