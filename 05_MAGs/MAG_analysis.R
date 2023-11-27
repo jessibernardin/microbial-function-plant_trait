@@ -62,5 +62,120 @@ filtered_df <- filtered_df %>%
 
 #Fig7
 ggplot(filtered_df, aes(x = mag_species, y = KO_definition, color=broad_enzyme)) +
-  geom_jitter(alpha=.3) + theme_classic() + theme(axis.text.x = element_text(angle = 45, hjust = 1),
+  geom_jitter(alpha=.3) + theme_classic() + theme(axis.text.x = element_text(angle = 90, hjust = 1),
                                                   legend.position = "none")+ scale_color_manual(values = c("black", "black"))
+
+filtered_df_new <- filtered_df %>%
+  group_by(mag_species, KO_definition) %>%
+  mutate(value = n()) %>%
+  ungroup()
+
+
+ggplot(filtered_df_new, aes(x = mag_species, y = KO_definition, group=KO_definition)) + 
+  geom_point(aes(size = value, fill = value), alpha = 0.75, shape = 21)
+
+colours = c( "#A54657",  "#582630", "#F7EE7F", "#4DAA57","#F1A66A","#F26157", "#F9ECCC", "#679289", "#33658A",
+             "#F6AE2D","#86BBD8")
+colours2 = c( "#F7EE7F","#679289")
+ggplot(filtered_df_new, aes(x = mag_species, y = broad_enzyme, group=broad_enzyme)) + 
+  geom_point(aes(size = value, fill = value), alpha = 0.75, shape = 21)+ theme_classic()+
+   scale_size_continuous(limits = c(1, 300), range = c(1,17), breaks = c(1,10,50,100,200,300)) + 
+  theme(legend.key=element_blank(), 
+        axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+        axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+        legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+        legend.title = element_text(size = 12, face = "bold"), 
+        panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+        legend.position = "right")
+
+filtered_df_new$value <- as.integer(filtered_df_new$value)
+
+ggplot(filtered_df_new, aes(x = mag_species, y = broad_enzyme)) + 
+  geom_point(aes(size = value, fill = broad_enzyme), alpha = 0.75, shape = 21) + 
+  scale_size_continuous(limits = c(1, 300), range = c(1,17), breaks = c(10,50,100,300)) + 
+  labs( x= "", y = "", size = "Richness of KOs", fill = "")  + 
+  theme(legend.key=element_blank(), 
+        axis.text.x = element_text(colour = "black", size = 12, face = "bold", angle = 90, vjust = 0.3, hjust = 1), 
+        axis.text.y = element_text(colour = "black", face = "bold", size = 11), 
+        legend.text = element_text(size = 10, face ="bold", colour ="black"), 
+        legend.title = element_text(size = 12, face = "bold"), 
+        panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+        legend.position = "right") +  
+  scale_fill_manual(values = colours, guide = FALSE) 
+
+
+filtered_df_new <- filtered_df_new[order(filtered_df_new$value, decreasing = TRUE),]  
+
+ggplot(filtered_df_new, aes(x = mag_species, y = KO_definition)) + 
+  geom_point(aes(size = value, fill = KO_definition), alpha = 0.75, shape = 21) + 
+  scale_size_continuous(limits = c(1, 300), range = c(1,17), breaks = c(10,50,100,300)) + 
+  labs( x= "", y = "", size = "Richness of KOs", fill = "")  + 
+          theme(legend.key=element_blank(), 
+                axis.text.x = element_text(colour = "black", size = 5, face = "bold", angle = 45, vjust = 0.3, hjust = 1), 
+                axis.text.y = element_text(colour = "black", face = "bold", size = 5), 
+                legend.text = element_text(size = 5, face ="bold", colour ="black"), 
+                legend.title = element_text(size = 5, face = "bold"), 
+        panel.background = element_blank(), panel.border = element_rect(colour = "black", fill = NA, size = 1.2), 
+        legend.position = "right") +  
+  scale_fill_manual(values = colours, guide = FALSE) 
+
+filtered_df_new$broad_enzyme <- factor(filtered_df_new$broad_enzyme, levels = c("Chitinase", "Protease"))
+
+filtered_df_new <- filtered_df_new %>%
+  arrange(broad_enzyme)
+
+filtered_df_new$KO_definition <- as.factor(filtered_df_new$KO_definition)
+
+ggplot(filtered_df_new, aes(x = reorder(mag_species, -value), y = factor(KO_definition, levels=unique(KO_definition)), size = value, fill = KO_definition)) + 
+  geom_point(alpha = 0.75, shape = 21) + 
+  scale_size_continuous(limits = c(1, 300), range = c(1, 10), breaks = c(10, 50, 100, 300)) + 
+  labs(x = "", y = "", size = "# Unique Contigs", fill = "") +theme_classic()+
+  theme(legend.key=element_blank(), 
+        axis.text.x = element_text(colour = "black", size = 5, vjust = 1.01, hjust = 1, angle=90), 
+        axis.text.y = element_text(colour = "black", size = 5), 
+        legend.text = element_text(size = 5, colour ="black"), 
+        legend.position = "right") +  
+  scale_fill_manual(values = colours, guide = FALSE)+ 
+  scale_y_discrete(labels = function(x) str_wrap(x, width = 20))
+
+
+
+ggplot(filtered_df_new, aes(y = reorder(mag_species, value), x = factor(KO_definition, levels=unique(KO_definition)), size = value, fill = KO_definition)) + 
+  geom_point(alpha = 0.75, shape = 21) + 
+  scale_size_continuous(limits = c(1, 300), range = c(1, 10), breaks = c(10, 50, 100, 300)) + 
+  labs(x = "", y = "", size = "# Unique Contigs", fill = "") +theme_classic()+
+  theme(legend.key=element_blank(), 
+        axis.text.x = element_text(colour = "black", size = 5, vjust = 1.01, hjust = 1, angle=90), 
+        axis.text.y = element_text(colour = "black", size = 5), 
+        legend.text = element_text(size = 5, colour ="black"), 
+        legend.position = "right") +  
+  scale_fill_manual(values = colours, guide = FALSE)+ 
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 20))
+
+
+
+
+
+
+
+
+
+
+filtered_df_2 <- filtered_df_new
+
+filtered_df_2 <- filtered_df_2 %>%
+  group_by(mag_species, broad_enzyme) %>%
+  mutate(value_be = n()) %>%
+  ungroup()
+
+ggplot(filtered_df_2, aes(x = reorder(mag_species, -value_be), y = broad_enzyme, size = value_be, fill = broad_enzyme)) + 
+  geom_point(alpha = 0.75, shape = 21) + 
+  scale_size_continuous(limits = c(1, 300), range = c(1, 17), breaks = c(10, 50, 100, 300)) + 
+  labs(x = "", y = "", size = "# Unique Contigs", fill = "") +theme_classic()+
+  theme(legend.key=element_blank(), 
+        axis.text.x = element_text(colour = "black", size = 5, angle = 45, vjust = 1.01, hjust = 1), 
+        axis.text.y = element_text(colour = "black", size = 5, angle=45), 
+        legend.text = element_text(size = 5, colour ="black"), 
+        legend.position = "right") +  
+  scale_fill_manual(values = colours2, guide = FALSE)
+

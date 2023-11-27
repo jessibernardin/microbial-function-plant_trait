@@ -1,6 +1,6 @@
 #### Microbial function mediates leaf traits in a pitcher plant model system ####
 #### Authors: Jessica R. Bernardin, Erica B. Young, Leonora S. Bittleston ####
-#### last update : October 16, 2023 ####
+#### last update : November 27, 2023 ####
 #### 16S Metabarcoding Analysis
 
 # List of package names to load
@@ -36,7 +36,7 @@ summary(colSums(asv16s))#3406 ASV are row names and samples are columns
 #### metadata ####
 #this has all the physiology added to the metadata
 #samples are rownames
-meta <- read_csv("micro_function_plant_trait_metadata.csv")
+meta <- read_csv("../01_physiology_in_R/micro_function_plant_trait_metadata.csv")
 meta <- meta %>% drop_na(Description)
 meta$ID <- meta$"#SampleID"
 meta <- meta %>% remove_rownames %>% column_to_rownames(var="#SampleID") 
@@ -223,13 +223,44 @@ ths_ens_wk18
 glm1 <- brm(effective_species ~ treatment*week + (1|plant_number), family = poisson, data=md_filt, iter=10000)
 pp_check(glm1)
 summary(glm1)
-
-mcmc_areas(glm1, pars=c("b_Intercept","b_treatmentCommB", "b_treatmentCommC", "b_week8", "b_treatmentCommB:week8", "b_treatmentCommC:week8"),
+posterior_interval(glm1, prob=.95)
+mcmc_areas(glm1,
            prob = 0.8, # 80% intervals
            prob_outer = 0.95, # 95%
            point_est = "mean") +
   theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
   geom_vline(xintercept=0, linetype="dotted", color="darkgray")
+posterior6 <- mcmc_intervals_data(glm1, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
+
+posterior6$nonzero <- NA
+posterior6$nonzero[posterior6$ll>0 & posterior6$hh>0] <- "nonzero"
+posterior6$nonzero[posterior6$ll<0 & posterior6$hh<0] <- "nonzero"
+posterior6$nonzero[is.na(posterior6$nonzero)] <- "zero"
+posterior6<- posterior6[1:6,]
+
+#FIGS9
+ggplot(posterior6, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\nTreatment on Pitcher Length (cm)")+
+  guides(linetype=FALSE) 
 
 #### MAKE PHYLOSEQ OBJECTS ####
 #asv16s.physeq1 = RARIFIED, experimental controls removed
