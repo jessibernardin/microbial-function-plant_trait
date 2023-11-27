@@ -1,6 +1,6 @@
 #### Microbial function mediates leaf traits in a pitcher plant model system ####
 #### Authors: Jessica R. Bernardin, Erica B. Young, Leonora S. Bittleston ####
-#### last update : October 16, 2023 ####
+#### last update : November 1, 2023 ####
 #### Physiological Functions Analysis
 
 #### Load Required Packages ####
@@ -9,7 +9,7 @@ packages_to_load <- c(
   "plyr", "dplyr", "reshape", "reshape2", "ape", "DiagrammeR", "tidyverse",
   "tidybayes", "coefplot", "standardize", "bayesplot", "MCMCvis", "car",
   "patchwork", "ggpubr", "corrr", "ggcorrplot", "factoextra", "MASS",
-  "pairwiseAdonis", "plotrix", "gridExtra", "multcompView", "ggeffects", "this.path"
+  "pairwiseAdonis", "plotrix", "gridExtra", "multcompView", "ggeffects", "this.path", "brms", "ggmulti"
 )
 
 # Load and install required packages
@@ -44,53 +44,53 @@ ggplot(orig_enz_rkn, aes(x = treatment, y = growth_r, color=treatment)) +  geom_
   theme_classic() + ylab("Growth Rate") + xlab("Original cultures used as inoculant")+
   theme(text = element_text(size = 10)) +geom_jitter()
 
-anova.growth_cult<- aov(growth_r ~ treatment, data= orig_enz_rkn)
-summary(anova.growth_cult)
+glm.growth_cult<- brm(growth_r ~ treatment, data= orig_enz_rkn)
+summary(glm.growth_cult)
+mcmc_plot(glm.growth_cult)
 
 #chitinase original cultures
-anova.chit.org<- aov(chitinase_7_29 ~ treatment, data= orig_enz_rkn)
-summary(anova.chit.org)
+glm.chit.org<- brm(chitinase_7_29 ~ treatment, data= orig_enz_rkn)
+summary(glm.chit.org)
+mcmc_plot(glm.chit.org)
 
-tukey.test_chit <- TukeyHSD(anova.chit.org)
-tukey.test_chit
-cld <- multcompLetters4(anova.chit.org, tukey.test_chit)
-detach(package:plyr)
-dt <- orig_enz_rkn %>% na.omit(orig_enz_rkn$chitinase_7_29) %>% dplyr::group_by(treatment) %>%
-  summarise(c_mean=mean(chitinase_7_29), sd=sd(chitinase_7_29)) %>%
-  arrange(desc(c_mean))
-cld <- as.data.frame.list(cld$treatment)
-dt$tukey.test_chit <- cld$Letters
-color <- c("#ea7000", "#bdbf02", "#39888f")
+data_summary <- function(data, varname, groupnames){
+  require(plyr)
+  summary_func <- function(x, col){
+    c(mean = mean(x[[col]], na.rm=TRUE),
+      sd = sd(x[[col]], na.rm=TRUE))
+  }
+  data_sum<-ddply(data, groupnames, .fun=summary_func,
+                  varname)
+  data_sum <- rename(data_sum, c("mean" = varname))
+  return(data_sum)
+}
 
-#Fig1C
-ggplot(dt, aes(x = treatment, y = c_mean, fill = treatment)) +
+df2 <- data_summary(orig_enz_rkn, varname="chitinase_7_29", 
+                    groupnames=c("treatment"))
+df2$treatment=as.factor(df2$treatment)
+
+#Fig1A
+ggplot(df2, aes(x = treatment, y = chitinase_7_29, fill = treatment)) +
   geom_bar(stat = "identity", position = "dodge", show.legend = FALSE) +
-  geom_errorbar(aes(ymax = c_mean + sd, ymin = c_mean - sd),
-                position = position_dodge(0.9), width = 0.25, color = "Gray25") +
-  scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2")) +theme_classic()+
-  geom_text(aes(label=tukey.test_chit, y = c_mean + sd*1.2), vjust = -.1, size = 10, color = "Gray25", show.legend = FALSE, position = position_dodge(0.9)) + ylab("Chitinase Rate")
+  scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2")) +theme_classic()+ ylab("Chitinase Activity")+
+  geom_errorbar(aes(ymin=chitinase_7_29-sd, ymax=chitinase_7_29+sd), width=.2,
+                position=position_dodge(.9))
 
 #protease original cultures
-anova.prot.org<- aov(protease_7_29 ~ treatment, data= orig_enz_rkn)
-summary(anova.prot.org)
+glm.prot.org<- brm(protease_7_29 ~ treatment, data= orig_enz_rkn)
+summary(glm.prot.org)
+mcmc_plot(glm.prot.org)
 
-tukey.test_prot <- TukeyHSD(anova.prot.org)
-tukey.test_prot
-cld <- multcompLetters4(anova.prot.org, tukey.test_prot)
-dt <- orig_enz_rkn %>% na.omit(orig_enz_rkn$protease_7_29) %>% dplyr::group_by(treatment) %>%
-  summarise(p_mean=mean(protease_7_29), sd=sd(protease_7_29)) %>%
-  arrange(desc(p_mean))
-cld <- as.data.frame.list(cld$treatment)
-dt$tukey.test_prot <- cld$Letters
-color <- c("#ea7000", "#bdbf02", "#39888f")
+df2 <- data_summary(orig_enz_rkn, varname="protease_7_29", 
+                    groupnames=c("treatment"))
+df2$treatment=as.factor(df2$treatment)
 
-#Fig1D
-ggplot(dt, aes(x = treatment, y = p_mean, fill = treatment)) +
+#Fig1B
+ggplot(df2, aes(x = treatment, y = protease_7_29, fill = treatment)) +
   geom_bar(stat = "identity", position = "dodge", show.legend = FALSE) +
-  geom_errorbar(aes(ymax = p_mean + sd, ymin = p_mean - sd),
-                position = position_dodge(0.9), width = 0.25, color = "Gray25") +
-  scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2")) +theme_classic()+
-  geom_text(aes(label=tukey.test_prot, y = p_mean + sd*1.2), vjust = -.1, size = 10, color = "Gray25", show.legend = FALSE, position = position_dodge(0.9)) + ylab("Protease Rate")
+  scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2")) +theme_classic()+ ylab("Protease Activity")+
+  geom_errorbar(aes(ymin=protease_7_29-sd, ymax=protease_7_29+sd), width=.2,
+                position=position_dodge(.9))
 
 #respiration
 # Microresp for each of the 5 weeks of inoculating (CommA, CommB, CommC)
@@ -129,51 +129,209 @@ ggplot(data = resp_ave, aes(x=treatment, y=mean, colour=treatment, group = treat
   geom_line() + geom_point() + theme_minimal()
 
 ##stats###
-anova_treatment_resp <- aov(rate24 ~ treatment, data = resp_ppm_rate_filt)
-summary(anova_treatment_resp)
-tukey.test_resp <- TukeyHSD(anova_treatment_resp)
-tukey.test_resp
-cld <- multcompLetters4(anova_treatment_resp, tukey.test_resp)
-# Table with the mean, the standard deviation and the letters indications significant differences for each treatment
-resp_ppm_rate_filt$treatment <- as.factor(resp_ppm_rate_filt$treatment)
-levels(resp_ppm_rate_filt$treatment)
-dt <- resp_ppm_rate_filt %>% dplyr::group_by(treatment) %>%
-  summarise(ppm_mean=mean(rate24), sd=sd(rate24)) %>%
-  arrange(desc(ppm_mean))
-cld <- as.data.frame.list(cld$treatment)
-dt$tukey.test_resp <- cld$Letters
-color <- c("#014b7a", "#ffaf49", "#44b7c2")
+glm.treatment_resp<- brm(rate24 ~ treatment, data= resp_ppm_rate_filt)
+summary(glm.treatment_resp)
+mcmc_plot(glm.treatment_resp)
 
-#FigS4A
-ggplot(dt, aes(x = treatment, y = ppm_mean, fill = treatment)) +
+df2 <- data_summary(resp_ppm_rate_filt, varname="rate24", 
+                    groupnames=c("treatment"))
+df2$treatment=as.factor(df2$treatment)
+
+ggplot(df2, aes(x = treatment, y = rate24, fill = treatment)) +
   geom_bar(stat = "identity", position = "dodge", show.legend = FALSE) +
-  geom_errorbar(aes(ymax = ppm_mean + sd, ymin = ppm_mean - sd),
+  geom_errorbar(aes(ymax = rate24 + sd, ymin = rate24 - sd),
                 position = position_dodge(0.9), width = 0.25, color = "Gray25") +
-  scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2")) +
-  geom_text(aes(label=tukey.test_resp, y = ppm_mean + sd*1.2), vjust = -.1, size = 10, color = "Gray25",
-            show.legend = FALSE, position = position_dodge(0.9)) + theme_classic() +
+  scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2")) +theme_classic() +
   labs(y=expression(CO[2]~Production~(ppm/hr))) + xlab("Treatment Community")
 
+#predictions from models of communities before experiment
+posterior_chit <- as.data.frame(glm.chit.org)
+posterior_prot <- as.data.frame(glm.prot.org)
+posterior_growth <- as.data.frame(glm.growth_cult)
+posterior_resp <- as.data.frame(glm.treatment_resp)
+
+pchit_melt <- posterior_chit[,1:3]
+pprot_melt <- posterior_prot[,1:3]
+pgrowth_melt <- posterior_growth[,1:3]
+presp_melt <- posterior_resp[,1:3]
+
+pchit_melt <- reshape2::melt(pchit_melt)
+pprot_melt <- reshape2::melt(pprot_melt)
+pgrowth_melt <- reshape2::melt(pgrowth_melt)
+presp_melt <- reshape2::melt(presp_melt)
+
+posterior1 <- mcmc_intervals_data(glm.chit.org, 
+                                           prob_outer=0.95,
+                                           prob=0.5)
+
+posterior1$nonzero <- NA
+posterior1$nonzero[posterior1$ll>0 & posterior1$hh>0] <- "nonzero"
+posterior1$nonzero[posterior1$ll<0 & posterior1$hh<0] <- "nonzero"
+posterior1$nonzero[is.na(posterior1$nonzero)] <- "zero"
+
+level_order <- c("b_treatmentCommC", "b_treatmentCommB","b_Intercept") 
+
+#FIGS2A
+posterior1$parameter <- factor(posterior1$parameter, level = level_order)
+
+posterior1<- posterior1[1:3,]
+ggplot(posterior1, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\nTreatment on Chitinase Activity")+
+  guides(linetype=FALSE) 
+
+#prot orig cultures
+posterior2 <- mcmc_intervals_data(glm.prot.org, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
+
+posterior2$nonzero <- NA
+posterior2$nonzero[posterior2$ll>0 & posterior2$hh>0] <- "nonzero"
+posterior2$nonzero[posterior2$ll<0 & posterior2$hh<0] <- "nonzero"
+posterior2$nonzero[is.na(posterior2$nonzero)] <- "zero"
+
+level_order <- c("b_treatmentCommC", "b_treatmentCommB","b_Intercept") 
+
+posterior2$parameter <- factor(posterior2$parameter, level = level_order)
+
+posterior2<- posterior2[1:3,]
+
+#FIGS2B
+ggplot(posterior2, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\nTreatment on Protease Activity")+
+  guides(linetype=FALSE) 
+
+
+#resp orig cultures
+posterior3 <- mcmc_intervals_data(glm.treatment_resp, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
+
+posterior3$nonzero <- NA
+posterior3$nonzero[posterior3$ll>0 & posterior3$hh>0] <- "nonzero"
+posterior3$nonzero[posterior3$ll<0 & posterior3$hh<0] <- "nonzero"
+posterior3$nonzero[is.na(posterior3$nonzero)] <- "zero"
+
+level_order <- c("b_treatmentCommC", "b_treatmentCommB","b_Intercept") 
+
+posterior3$parameter <- factor(posterior3$parameter, level = level_order)
+
+posterior3<- posterior3[1:3,]
+
+#FIGS2D
+ggplot(posterior3, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\nTreatment on Bacterial Respiration")+
+  guides(linetype=FALSE) 
+
+#growth orig cultures
+posterior4 <- mcmc_intervals_data(glm.growth_cult, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
+
+posterior4$nonzero <- NA
+posterior4$nonzero[posterior4$ll>0 & posterior4$hh>0] <- "nonzero"
+posterior4$nonzero[posterior4$ll<0 & posterior4$hh<0] <- "nonzero"
+posterior4$nonzero[is.na(posterior4$nonzero)] <- "zero"
+
+level_order <- c("b_treatmentCommC", "b_treatmentCommB","b_Intercept") 
+
+posterior4$parameter <- factor(posterior4$parameter, level = level_order)
+
+posterior4<- posterior4[1:3,]
+
+#FIGS2C
+ggplot(posterior4, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\nTreatment on Bacterial Growth Rate")+
+  guides(linetype=FALSE) 
 
 #### Chitinase Activity ####
 #Day 1 in plant for 24 hrs
 data_day1 <- data_filt %>%
   filter(day == 1, !(treatment %in% c("ACM", "WATER")))
 
-#FigS3A
+#FigS4A
 ggplot(data=data_day1,aes(x = treatment, y = chitinase_rate_uM_per_min, group_by=treatment,fill = treatment)) +
-  geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),position = position_jitterdodge(0.2),cex=1) + theme_classic() +
+  geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
   scale_color_manual(values=c("#014b7a", "#ffaf49", "#44b7c2"))+
   scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2"))
 
-anova_treatment_chit <- aov(chitinase_rate_uM_per_min ~ treatment, data = data_day1)
-summary(anova_treatment_chit)
-
+glm_treatment_chit<- brm(chitinase_rate_uM_per_min ~ treatment, data= data_day1)
+summary(glm_treatment_chit)
+mcmc_plot(glm_treatment_chit)
+posterior_interval(glm._treatment_chit, prob=.95)
 #chitinase activity day1 through day55
-#FigS3C
-ggplot(data=data_filt, aes(x=treatment, y=chitinase_rate_uM_per_min, color = treatment))+ 
-  facet_wrap(~week, nrow=3) + geom_boxplot() + geom_jitter()+
+
+#FigS4C
+ggplot(data=data_filt, aes(x=day, y=chitinase_rate_uM_per_min, color = treatment, group=treatment))+ 
+  geom_smooth(se=FALSE, size=3) + geom_jitter(size=3)+
   ylab("Chitinase Rate") + theme_classic() +
   scale_color_manual(values=c("#5C4033","#014b7a", "#ffaf49", "#44b7c2", "gray"))+
   scale_fill_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))
@@ -182,59 +340,70 @@ ggplot(data=data_filt, aes(x=treatment, y=chitinase_rate_uM_per_min, color = tre
 col_treat <- c("#014b7a", "#ffaf49", "#44b7c2")
 
 #Fig3A
-data_filt %>%  subset(., plant_number %in% c("5", "18", "45", "19", "43", "1", "13", "3", "33")) %>% 
-ggplot(aes(x = treatment, y = cumulative_chitinase_uM_min, group_by=treatment,fill = treatment)) +
+tran_chit <- data_filt %>%  subset(., plant_number %in% c("5", "18", "45", "19", "43", "1", "13", "3", "33"))
+ggplot(data=tran_chit, aes(x = treatment, y = cumulative_chitinase_uM_min, group_by=treatment,fill = treatment)) +
   geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),position = position_jitterdodge(0.2),cex=1) + theme_classic() +
   scale_color_manual(values=col_treat)+
   scale_fill_manual(values=col_treat)
 
+glm_tran_chit<- brm(cumulative_chitinase_uM_min ~ treatment, data= tran_chit)
+summary(glm_tran_chit)
+mcmc_plot(glm_tran_chit)
+posterior_interval(glm_tran_chit, prob=.95)
+
 #### Protease Activity ####
 #Day 1 in plant for 24 hrs
-#FigS3B
+#FigS4B
 ggplot(data=data_day1,aes(x = treatment, y = protease_rate_nM_per_min, group_by=treatment,fill = treatment)) +
-  geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),position = position_jitterdodge(0.2),cex=1) + theme_classic() +
+  geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
   scale_color_manual(values=c("#014b7a", "#ffaf49", "#44b7c2"))+
   scale_fill_manual(values=c("#014b7a", "#ffaf49", "#44b7c2"))
 
-anova_treatment_prot <- aov(protease_rate_nM_per_min ~ treatment, data = data_day1)
-summary(anova_treatment_prot)
-
+glm_treatment_prot<- brm(protease_rate_nM_per_min ~ treatment, data= data_day1)
+summary(glm_treatment_prot)
+mcmc_plot(glm_treatment_prot)
+posterior_interval(glm_treatment_prot, prob=.95)
 #protease activity day1 through day55
-#FigS3D
-ggplot(data=data_filt, aes(x=treatment, y=protease_rate_nM_per_min, color = treatment))+ 
-  facet_wrap(~week, nrow=3) + geom_boxplot()+ geom_jitter()+
+#FigS4D
+ggplot(data=data_filt, aes(x=day, y=protease_rate_nM_per_min, color = treatment, group=treatment))+ 
+  geom_smooth(se=FALSE, size=3)+ geom_jitter(size=3)+
   ylab("Protease Rate") + theme_classic()  +
   scale_color_manual(values=c("#5C4033","#014b7a", "#ffaf49", "#44b7c2", "gray"))+
   scale_fill_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))
 
 #Subset to only those samples in metatranscriptomic analysis
 #Fig3B
-data_filt %>%  subset(., plant_number %in% c("5", "18", "45", "19", "43", "1", "13", "3", "33")) %>% 
-  ggplot(aes(x = treatment, y = cumulative_protease_nM_min, group_by=treatment,fill = treatment)) +
+tran_prot <- data_filt %>%  subset(., plant_number %in% c("5", "18", "45", "19", "43", "1", "13", "3", "33"))
+ggplot(data=tran_prot, aes(x = treatment, y = cumulative_protease_nM_min, group_by=treatment,fill = treatment)) +
   geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),position = position_jitterdodge(0.2),cex=1) + theme_classic() +
   scale_color_manual(values=col_treat)+
   scale_fill_manual(values=col_treat)
 
+glm_tran_prot<- brm(cumulative_protease_nM_min ~ treatment, data= tran_prot)
+summary(glm_tran_prot)
+mcmc_plot(glm_tran_prot)
+posterior_interval(glm_tran_prot, prob=.95)
+
 #### RESPIRATION ####
-#FigS4B
-ggplot(data=data_filt,aes(x = treatment, y = bacterial_respiration_rate_at_24hr, group_by=treatment,fill = treatment)) +
-  geom_boxplot(outlier.shape=NA, size=1, alpha=.7) + geom_jitter(aes(color=treatment),position = position_jitterdodge(0.2),cex=1, size=3) + theme_classic() +
+glm_treatment_resp<- brm(bacterial_respiration_rate_at_24hr ~ treatment, data= data_filt)
+summary(glm_treatment_resp)
+mcmc_plot(glm_treatment_resp)
+
+#### GROWTH RATE ####
+glm_treatment_growth<- brm(wk8_r ~ treatment, data= data_filt)
+summary(glm_treatment_growth)
+mcmc_plot(glm_treatment_growth)
+
+#### Plant Traits ####
+#FigS7C
+ggplot(data=data_filt,aes(x = treatment, y = carbon1_content_grams, group_by=treatment,fill = treatment)) +geom_boxplot(outlier.shape=NA, size=1, alpha=.7)+
+  geom_jitter(aes(color=treatment),size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
   scale_color_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))+
   scale_fill_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))
 
-resp.aov <- aov(bacterial_respiration_rate_at_24hr ~ treatment, data=data_filt)
-summary(resp.aov)
-tukey.anova_respall <- TukeyHSD(resp.aov)
-tukey.anova_respall
-
-#### GROWTH RATE ####
-anova_growth <- aov(wk8_r ~ treatment, data= data_filt)
-summary(anova_growth) 
-
-#### Plant Traits ####
-#FigS6A
+#FigS7E
 ggplot(data=data_filt,aes(x = day, y = pitcher_length_cm, group_by=treatment,fill = treatment)) +
  geom_jitter(aes(color=treatment),position = position_jitterdodge(0.2),cex=1, size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
@@ -242,26 +411,152 @@ ggplot(data=data_filt,aes(x = day, y = pitcher_length_cm, group_by=treatment,fil
   scale_fill_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))+geom_smooth()+
   facet_wrap(~treatment, nrow=1)
 
-#FigS6B
+glm_treatment_length<- brm(pitcher_length_cm ~ treatment+ (1|plant_number), data= data_filt)
+summary(glm_treatment_length)
+mcmc_plot(glm_treatment_length)
+posterior5 <- mcmc_intervals_data(glm_treatment_length, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
+
+posterior5$nonzero <- NA
+posterior5$nonzero[posterior5$ll>0 & posterior5$hh>0] <- "nonzero"
+posterior5$nonzero[posterior5$ll<0 & posterior5$hh<0] <- "nonzero"
+posterior5$nonzero[is.na(posterior5$nonzero)] <- "zero"
+posterior5<- posterior5[1:5,]
+posterior5$parameter <- factor(posterior5$parameter, level = level_order)
+
+#FigS7F
+ggplot(posterior5, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\nTreatment on Pitcher Length (cm)")+
+  guides(linetype=FALSE) + theme(legend.position = "none")
+
+#FigS7A
 ggplot(data=data_filt,aes(x = treatment, y = photosynthetic_rate_leaf1_μmol_per_m2sec, group_by=treatment,fill = treatment)) +geom_boxplot(outlier.shape=NA, size=1, alpha=.7)+
   geom_jitter(aes(color=treatment),size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
   scale_color_manual(values=c("gray","#5C4033", "#014b7a", "#ffaf49", "#44b7c2"))+
   scale_fill_manual(values=c("gray","#5C4033", "#014b7a", "#ffaf49", "#44b7c2"))
 
-leaf1_photo_anova <- aov(photosynthetic_rate_leaf1_μmol_per_m2sec ~treatment, data = data_filt)
-summary(leaf1_photo_anova)
+glm_treatment_leaf1_photo<- brm(photosynthetic_rate_leaf1_μmol_per_m2sec ~ treatment, data= data_filt)
+summary(glm_treatment_leaf1_photo)
+mcmc_plot(glm_treatment_leaf1_photo)
+posterior6 <- mcmc_intervals_data(glm_treatment_leaf1_photo, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
 
-#FigS6C
+posterior6$nonzero <- NA
+posterior6$nonzero[posterior6$ll>0 & posterior6$hh>0] <- "nonzero"
+posterior6$nonzero[posterior6$ll<0 & posterior6$hh<0] <- "nonzero"
+posterior6$nonzero[is.na(posterior6$nonzero)] <- "zero"
+posterior6<- posterior6[1:5,]
+level_order <- c("b_treatmentWATER", "b_treatmentCommC", "b_treatmentCommB","b_treatmentCommA", "b_Intercept") 
+posterior6$parameter <- factor(posterior6$parameter, level = level_order)
+
+#FigS7B
+ggplot(posterior6, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\non Pitcher Photosynthesis ")+
+  guides(linetype=FALSE) + theme(legend.position = "none")
+
+#FigS7G
 ggplot(data=data_filt,aes(x = treatment, y = new_leaves, group_by=treatment,fill = treatment)) +geom_boxplot(outlier.shape=NA, size=1, alpha=.7)+
   geom_jitter(aes(color=treatment),size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
   scale_color_manual(values=c("gray","#5C4033", "#014b7a", "#ffaf49", "#44b7c2"))+
   scale_fill_manual(values=c("gray","#5C4033", "#014b7a", "#ffaf49", "#44b7c2"))
 
+glm_treatment_newleaves<- brm(new_leaves ~ treatment, data= data_filt)
+summary(glm_treatment_newleaves)
+mcmc_plot(glm_treatment_newleaves)
+posterior_interval(glm_treatment_newleaves, prob=.95)
+a <- as.data.frame(glm_treatment_newleaves)
+CommC <- a %>% filter(b_treatmentCommC >0)
+nrow(CommC)/nrow(a) 
+
+posterior7 <- mcmc_intervals_data(glm_treatment_newleaves, 
+                                  prob_outer=0.95,
+                                  prob=0.5)
+
+posterior7$nonzero <- NA
+posterior7$nonzero[posterior7$ll>0 & posterior7$hh>0] <- "nonzero"
+posterior7$nonzero[posterior7$ll<0 & posterior7$hh<0] <- "nonzero"
+posterior7$nonzero[is.na(posterior7$nonzero)] <- "zero"
+posterior7<- posterior7[1:5,]
+level_order <- c("b_treatmentWATER", "b_treatmentCommC", "b_treatmentCommB","b_treatmentCommA", "b_Intercept") 
+posterior7$parameter <- factor(posterior7$parameter, level = level_order)
+
+#FigS7H
+ggplot(posterior7, aes(x = parameter,
+                       shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Probability of effect of\non New Pitchers ")+
+  guides(linetype=FALSE) + theme(legend.position = "none")
+
+####Plant Nutrients ####
+data_filt$nitrogen1_content_grams <- (data_filt$leaf1_percent_N / 100) * data_filt$drymass_leaf1_grams
+data_filt$nitrogen2_content_grams <- (data_filt$leaf2_percent_N / 100) * data_filt$drymass_leaf2_grams
+data_filt$carbon1_content_grams <- (data_filt$leaf1_percent_C / 100) * data_filt$drymass_leaf1_grams
+data_filt$carbon2_content_grams <- (data_filt$leaf2_percent_C / 100) * data_filt$drymass_leaf2_grams
+
+#PLOT
+ggplot(data_filt, aes(x=treatment, y=nitrogen1_content_grams), color=treatment, group=treatment) + geom_boxplot()
+ggplot(data_filt, aes(x=treatment, y=nitrogen2_content_grams), color=treatment, group=treatment) + geom_boxplot()
+ggplot(data_filt, aes(x=treatment, y=carbon1_content_grams), color=treatment, group=treatment) + geom_boxplot()
+ggplot(data_filt, aes(x=treatment, y=carbon2_content_grams), color=treatment, group=treatment) + geom_boxplot()
+
+
 #### Correlation between plant traits ####
 #subset data to just plant traits
-plant_trait <- data_filt[,c(13,14,17,18,19, 23,24,25,26,29,30,31,32,39,40,41)]
+plant_trait <- data.frame(data_filt)
+plant_trait <- plant_trait[,c(13,14,17,18,19,23,24,25,26,29,30,31,32,39,40,41,53,54,55,56)]
 
 plant_trait_naomit <- na.omit(plant_trait)
 data_normalized <- scale(plant_trait_naomit)
@@ -274,10 +569,11 @@ fviz_eig(data.pca, addlabels = TRUE)
 fviz_pca_var(data.pca, col.var = "black")
 fviz_cos2(data.pca, choice = "var", axes = 1:2)
 
-#Fig2A
+#FigS5
 fviz_pca_var(data.pca, col.var = "x",
              gradient.cols = c("navy","black", "maroon"),
              repel = TRUE)
+
 
 #### ECOPLATES ####
 # no blanks, experimental controls, or damaged plants
@@ -308,7 +604,7 @@ hullsall <- all.scores %>%
   group_by(hull.id) %>%
   slice(chull(NMDS1, NMDS2))
 
-#FigS2
+#FigS3
 ggplot(all.scores, aes(x = NMDS1, y = NMDS2)) + 
   geom_point(size = 4, aes(colour = treatment, shape = day)) +
   theme(axis.text.y = element_text(colour = "black", size = 16, face = "bold"), 
@@ -331,6 +627,9 @@ com1[com1 < 0] <- 0
 
 #run NMDS on day 1 data only
 nmds1 <- metaMDS(com1, k=2, trymax=500)
+ordiplot(nmds1, display = "sites", type = "t")
+ordiplot(nmds1, display = "species", type = "t")
+
 wk1.scores <- as.data.frame(scores(nmds1, "sites"))
 wk1.scores <- cbind(wk1.scores, com1_meta)
 wk1.scores$day <- as.factor(wk1.scores$day)
@@ -343,7 +642,7 @@ hullswk1 <- wk1.scores %>%
   group_by(hull.id) %>%
   slice(chull(NMDS1, NMDS2))
 
-#Fig1E
+#Fig1C
 ggplot(wk1.scores, aes(x = NMDS1, y = NMDS2)) + 
   geom_point(size = 4, aes(colour = treatment, shape = day)) +
   theme(axis.text.y = element_text(colour = "black", size = 16, face = "bold"), 
@@ -357,6 +656,7 @@ ggplot(wk1.scores, aes(x = NMDS1, y = NMDS2)) +
   labs(x = "NMDS1", colour = "treatment", y = "NMDS2", shape = "day")  + 
   scale_colour_manual(values = c("#014b7a", "#ffaf49", "#44b7c2"))  + aes(fill = factor(hull.id)) + geom_polygon(data = hullswk1, alpha = 0.2) + guides(fill=FALSE)+ 
   scale_fill_manual(values = c("#014b7a", "#ffaf49", "#44b7c2"))
+
 
 ## Ecoplate Statistical Analysis
 # beta disper to check dispersion day 1 and day 55
@@ -554,31 +854,12 @@ exp(0.17)*exp(-1.29)
 exp(-0.16)*exp(-1.29)
 #0.2345703
 
-mcmc_areas(mbiomass, pars=c("b_Intercept", "b_treatmentCommA","b_treatmentCommB", "b_treatmentCommC", "b_treatmentWATER"),
-           prob = 0.80, # 80% intervals
-           prob_outer = 1, # 99%
-           point_est = "mean") +
-  theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
-  geom_vline(xintercept=0, linetype="dotted", color="darkgray")
-
-
 pmbiomass <- ggeffects::ggpredict(mbiomass, "treatment")
 colnames(pmbiomass)[1] <- "treatment"
 colnames(pmbiomass)[2] <- "drymass_leaf1_grams"
 
-#Fig2B
-ggplot(data_filt, aes(x = treatment, y = drymass_leaf1_grams, color=treatment)) + geom_jitter(size=6)+
-  scale_color_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray"))+
-  theme(legend.position="none") + geom_point(data=pmbiomass, aes(x=treatment, y=drymass_leaf1_grams), color="black", size=5) +
-  geom_linerange(data=pmbiomass,aes(ymin=conf.low, ymax=conf.high), size=2, color="black",
-                 position=position_dodge(width = 0.5)) + labs(
-                   x = "Treatment", 
-                   y = "Pitcher Biomass (g)") + theme_classic()+
-  theme(legend.position="none")
-
-posterior_mbiomass <- as.data.frame(mbiomass)
-
 #Directional Effects
+posterior_mbiomass <- as.data.frame(mbiomass)
 CommA <- posterior_mbiomass %>% filter(b_treatmentCommA >0)
 nrow(CommA)/nrow(posterior_mbiomass) #the probability of direction 0.8104
 CommB <- posterior_mbiomass %>% filter(b_treatmentCommB >0)
@@ -591,53 +872,99 @@ nrow(WATER)/nrow(posterior_mbiomass) #the probability of direction 0.8125
 posterior_mbiomass_melt <- posterior_mbiomass[,1:5]
 posterior_mbiomass_melt <- reshape2::melt(posterior_mbiomass_melt)
 
-#FigS5A
-ggplot(posterior_mbiomass_melt, aes(x = value, y=variable,
-                                    fill = stat(x < 0))) +
-  stat_halfeye() +
-  scale_fill_manual(values=c("#F7D95C", "gray"))+
+#Fig2B
+level_order <- c("b_treatmentWATER", "b_treatmentCommC", "b_treatmentCommB", "b_treatmentCommA", "b_Intercept") 
+ggplot(posterior_mbiomass_melt, aes(x = value, y =factor(variable, level = level_order),
+  fill = variable)) +
+  stat_halfeye(alpha=.6) +
   geom_vline(aes(xintercept=0), 
-             color="black", size=1, linetype="dashed")+
+  color="black", size=1, linetype="dashed")+
   ylab("Probability density") +
-  theme_classic() + guides(fill="none") + xlab("")
+  theme_classic() + xlab("")+
+  scale_fill_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray"))
 
+level_order2 <- c("CommA", "CommB", "CommC", "ACM", "WATER") 
 
+#Fig2A
+ggplot(data_filt, 
+       mapping = aes(x = factor(treatment, level=level_order2), 
+                     y = drymass_leaf1_grams, 
+                     fill = treatment, color=treatment))  +
+  geom_violin(trim=FALSE,alpha=.6) + geom_jitter(width=.1, size=3)+
+  scale_color_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray")) +
+  scale_fill_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray")) +
+  geom_point(data=pmbiomass, aes(x=treatment, y=drymass_leaf1_grams), color="black", size=5) +
+  geom_linerange(data=pmbiomass,aes(ymin=conf.low, ymax=conf.high), size=2, color="black",
+                 position=position_dodge(width = 0.5)) + labs(
+                   x = "Treatment", 
+                   y = "Pitcher Dry Biomass (g)") + theme_classic()+
+  theme(legend.position="none")
 
-## leaf nutrients ~ enzyme activity or treeatment ####
+#### leaf nutrients ~ enzyme activity or treatment ####
+m1 <- brm(nitrogen1_content_grams ~ treatment + cumulative_chitinase_uM_min_scaled + cumulative_protease_nM_min_scaled, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
+m2 <- brm(nitrogen1_content_grams ~ treatment, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
+m3 <- brm(nitrogen1_content_grams ~  number_of_pitchers + new_leaves, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4)
+m4 <- brm(carbon1_content_grams ~ treatment, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
 
-m1 <- brm(leaf1_percent_N ~ cumulative_chitinase_uM_min_scaled + cumulative_protease_nM_min_scaled, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
-m2 <- brm(leaf1_percent_N ~ treatment, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
-m3 <- brm(leaf1_percent_C ~ cumulative_chitinase_uM_min_scaled + cumulative_protease_nM_min_scaled, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
-m4 <- brm(leaf1_percent_C ~ treatment, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4) 
-m5 <- brm(leaf1_percent_N ~  number_of_pitchers + new_leaves, data=data_filt, family=Gamma(link="log"), iter = 10000, chains = 4, cores = 4)
+saveRDS(m1, "leafN_treatment_enzymes.RDS")
+saveRDS(m2, "leafN_treatment.RDS")
+saveRDS(m3, "leafN_otherplanttraits.RDS")
+saveRDS(m4, "leafC_treatment.RDS")
+
+m1 <- readRDS("leafN_treatment_enzymes.RDS")
+m2 <- readRDS("leafN_treatment.RDS")
+m3 <- readRDS("leafN_otherplanttraits.RDS")
+m4 <- readRDS("leafC_treatment.RDS")
 
 summary(m1)
 summary(m2)
 summary(m3)
 summary(m4)
-summary(m5)
 
-# model 2 estimate effects of treatment on leaf nitrogen
-#acm only 1.682028
-exp(0.52)
-#water 0.9704455
-exp(-0.55)*exp(0.52)
-#commA 1.568312
-exp(-0.07)*exp(0.52)
-#commB 1.138828
-exp(-0.37)*exp(0.5)
-#commC 1.491825
-exp(-0.10)*exp(0.5)
+## Model2 N~treatment (this is in g so multiply 1000 to convert to mg)
+(1000*exp(-5.42)) #acm only 4.427147
+(1000*exp(-0.74)*exp(-5.42)) #water 2.112253
+(1000*exp(0.13)*exp(-5.42)) #commA 5.04176
+(1000*exp(0.11)*exp(-5.42)) #commB 4.941927
+(1000*exp(0.06)*exp(-5.42)) #commC 4.700906
 
+#protease marginal effects
+p2 <- ggpredict(m1, terms="cumulative_protease_nM_min_scaled")
+
+#FIGS6A
+ggplot(p2, aes(x, predicted)) +
+  geom_lineribbon(aes(ymin=conf.low , ymax=conf.high),alpha = 0.35, 
+                  fill="firebrick3", color="black", size=1)+theme_classic()
+
+colnames(p2)[1] <- "cumulative_protease_nM_min_scaled"
+colnames(p2)[2] <- "nitrogen1_content_grams"
+
+ggplot(data_filt, 
+       mapping = aes(x = cumulative_protease_nM_min_scaled, 
+                     y = nitrogen1_content_grams))  +
+  geom_jitter(width=.1, size=3)+geom_lineribbon(data=p2,aes(ymin=conf.low , ymax=conf.high),alpha = 0.35, 
+                                                fill="firebrick3", color="black", size=1)+ theme_classic() + labs(
+                                                  x = "protease", 
+                                                  y = "Pitcher Nitrogen Content (g)") + theme_classic()+
+  theme(legend.position="none")
+
+
+###chitinase marginal effects
+#FIGS6B
+c2 <- ggpredict(m1, terms="cumulative_chitinase_uM_min_scaled")
+ggplot(c2, aes(x, predicted)) +
+  geom_lineribbon(aes(ymin=conf.low , ymax=conf.high),alpha = 0.35, 
+                  fill="forestgreen", color="black", size=1)+ theme_classic()
+
+colnames(c2)[1] <- "cumulative_chitinase_uM_min_scaled"
+colnames(c2)[2] <- "nitrogen1_content_grams"
 
 # Visualize the credible intervals for our model's parameters:
-mcmc_areas(
-  m1, 
-  pars = c("b_Intercept", "b_cumulative_chitinase_uM_min_scaled", "b_cumulative_protease_nM_min_scaled"),
-  prob = 0.8, # 80% intervals
-  prob_outer = 0.99, # 99%
-  point_est = "mean") + theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
-  geom_vline(xintercept=0, linetype="dotted", color="darkgray")+ theme(text = element_text(size = 15))
+mcmc_areas(m1, regex_pars = "b_",
+           prob = 0.8, # 80% intervals
+           prob_outer = 0.99, # 99%
+           point_est = "mean")+ theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
+  geom_vline(xintercept=0, linetype="dotted", color="darkgray")
 
 mcmc_areas(
   m2, 
@@ -649,7 +976,7 @@ mcmc_areas(
 
 mcmc_areas(
   m3, 
-  pars = c("b_Intercept", "b_cumulative_chitinase_uM_min_scaled", "b_cumulative_protease_nM_min_scaled"),
+  pars = c("b_Intercept", "b_treatmentWATER", "b_treatmentCommA", "b_treatmentCommB", "b_treatmentCommC", "b_cumulative_chitinase_uM_min_scaled", "b_cumulative_protease_nM_min_scaled"),
   prob = 0.8, # 80% intervals
   prob_outer = 0.99, # 99%
   point_est = "mean")+ theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
@@ -661,108 +988,125 @@ mcmc_areas(
   prob = 0.8, # 80% intervals
   prob_outer = 0.99, # 99%
   point_est = "mean")+ theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
-  geom_vline(xintercept=0, linetype="dotted", color="darkgray")+ theme(text = element_text(size = 30))
-
-mcmc_areas(
-  m5, 
-  pars = c("b_Intercept", "b_number_of_pitchers", "b_new_leaves"),
-  prob = 0.8, # 80% intervals
-  prob_outer = 0.99, # 99%
-  point_est = "mean")+ theme_classic() + xaxis_text(color="black")+ yaxis_text(color="black") +
   geom_vline(xintercept=0, linetype="dotted", color="darkgray")
+
+#Directional Effect of N~treatment
+posterior_m2 <- as.data.frame(m2)
+CommA <- posterior_m2 %>% filter(b_treatmentCommA >0)
+nrow(CommA)/nrow(posterior_m2)
+CommB <- posterior_m2 %>% filter(b_treatmentCommB >0)
+nrow(CommB)/nrow(posterior_m2)
+CommC <- posterior_m2 %>% filter(b_treatmentCommC >0)
+nrow(CommC)/nrow(posterior_m2)
+
+WATER <- posterior_m2 %>% filter(b_treatmentWATER <0)
+nrow(WATER)/nrow(posterior_m2)
+
+posterior_interval(m2, prob=.95)
+posterior_interval(m1, prob=.95)
+posterior_interval(m3, prob=.95)
 
 #marginal effect plots for C and N ~ treatment
 pm2 <- ggpredict(m2, "treatment")
 colnames(pm2)[1] <- "treatment"
-colnames(pm2)[2] <- "leaf1_percent_N"
+colnames(pm2)[2] <- "nitrogen1_content_grams"
 
 #Fig2C
-ggplot(data_filt, aes(x = treatment, y = leaf1_percent_N, color=treatment)) + geom_jitter(size=6, alpha=5)+
-  scale_color_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray"))+
-  theme(legend.position="none") + geom_point(data=pm2, aes(x=treatment, y=leaf1_percent_N), color="black", size=5) +
+ggplot(data_filt, 
+       mapping = aes(x = factor(treatment, level=level_order2), 
+                     y = nitrogen1_content_grams, 
+                     fill = treatment, color=treatment))  +
+  geom_violin(trim=FALSE,alpha=.6) + geom_jitter(width=.1, size=3)+
+  scale_color_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray")) +
+  scale_fill_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray")) +
+  geom_point(data=pm2, aes(x=treatment, y=nitrogen1_content_grams), color="black", size=5) +
   geom_linerange(data=pm2,aes(ymin=conf.low, ymax=conf.high), size=2, color="black",
                  position=position_dodge(width = 0.5)) + labs(
                    x = "Treatment", 
-                   y = "Predicted Leaf Nitrogen (%)") + theme(text = element_text(size =30)) + theme_classic()+
+                   y = "Pitcher Nitrogen Content (g)") + theme_classic()+
   theme(legend.position="none")
 
-posterior_nit_treat <- as.data.frame(m2)
-posterior_nit_treat_melt <- posterior_nit_treat[,1:5]
-posterior_nit_treat_melt <- reshape2::melt(posterior_nit_treat_melt)
+posterior_ncontent <- as.data.frame(m2)
+posterior_ncontent_melt <- posterior_ncontent[,1:5]
+posterior_ncontent_melt <- reshape2::melt(posterior_ncontent_melt)
+level_order <- c("b_treatmentWATER", "b_treatmentCommC", "b_treatmentCommB", "b_treatmentCommA", "b_Intercept") 
 
-#FigS5B
-ggplot(posterior_nit_treat_melt, aes(x = value, y=variable,
-                                    fill = stat(x > 0))) +
-  stat_halfeye() +
-  scale_fill_manual(values=c("#F7D95C", "gray"))+
+#Fig2D
+ggplot(posterior_ncontent_melt, aes(x = value, y =factor(variable, level = level_order),
+                                    fill = variable)) +
+  stat_halfeye(alpha=.6) +
   geom_vline(aes(xintercept=0), 
              color="black", size=1, linetype="dashed")+
   ylab("Probability density") +
-  theme_classic() + guides(fill="none") + xlab("")
+  theme_classic() + xlab("")+
+  scale_fill_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray"))+ theme(legend.position = "none")
+
+#m4, carbon~treatment
+posteriorm4 <- mcmc_intervals_data(m4, 
+                                   prob_outer=0.95,
+                                   prob=0.5)
+
+posteriorm4$nonzero <- NA
+posteriorm4$nonzero[posteriorm4$ll>0 & posteriorm4$hh>0] <- "nonzero"
+posteriorm4$nonzero[posteriorm4$ll<0 & posteriorm4$hh<0] <- "nonzero"
+posteriorm4$nonzero[is.na(posteriorm4$nonzero)] <- "zero"
+posteriorm4<- posteriorm4[1:5,]
+
+level_order <- c("b_treatmentWATER","b_treatmentCommC", "b_treatmentCommB","b_treatmentCommA","b_Intercept") 
+posteriorm4$parameter <- factor(posteriorm4$parameter, level = level_order)
+
+#FIGS7D
+ggplot(posteriorm4, aes(x = parameter,
+                        shape=nonzero)) +
+  geom_hline(yintercept = 0, linetype = 3, 
+             size=1, color = "#b0b5b3") +
+  geom_pointrange(aes(ymin = ll, ymax = hh, y = m),
+                  position= position_dodge(width=0.75),
+                  size = 3/4) +
+  scale_color_manual(name="",
+                     values = c("grey60", "#484c8d")) +
+  scale_shape_manual(values=c(16, 17), 
+                     labels=c("95% CI does\nnot contain zero", 
+                              "95% CI\ncontains zero"))+
+  coord_flip() +theme_bw() + 
+  theme(axis.text.y = element_text( size=7), 
+        axis.text.x=element_text(size=7),
+        axis.title = element_text(size=7), 
+        legend.text = element_text(size=7)) +
+  xlab(NULL) +
+  ylab("Estimated effect on pitcher carbon content")+
+  guides(linetype=FALSE) + theme(legend.position = "none")
 
 #Check model fit
 pp_check(m1)
 pp_check(m2)
 pp_check(m3)
 pp_check(m4)
-pp_check(m5)
-
 
 #positive or negative directional effect
 posterior.m1 <- as.data.frame(m1)
-protsum_pos <- posterior.m1 %>% filter(b_cumulative_protease_nM_min_scaled >0)
-nrow(protsum_pos)/nrow(posterior.m1) 
+protsum_pos <- posterior.m1 %>% filter(b_cumulative_protease_nM_min_scaled <0)
+nrow(protsum_pos)/nrow(posterior.m1) #0.7529
 
 chitsum_pos <- posterior.m1 %>% filter(b_cumulative_chitinase_uM_min_scaled <0)
-nrow(chitsum_pos)/nrow(posterior.m1) 
+nrow(chitsum_pos)/nrow(posterior.m1) #0.83435
 
-posterior.m1_melt <- posterior.m1[,1:3]
+posterior.m1_melt <- posterior.m1[,1:7]
 posterior.m1_melt <- reshape2::melt(posterior.m1_melt)
 
-#FigS5C
-ggplot(posterior.m1_melt, aes(x = value, y=variable,
-                                     fill = stat(x < 0))) +
-  stat_halfeye() +
-  scale_fill_manual(values=c("#F7D95C", "gray"))+
+#nitrogen~treatment+enzymes figures
+level_order3 <- c("b_cumulative_chitinase_uM_min_scaled",
+                  "b_cumulative_protease_nM_min_scaled","b_treatmentWATER",
+                  "b_treatmentCommC", "b_treatmentCommB",
+                  "b_treatmentCommA","b_Intercept")
+
+#FigS6C
+ggplot(posterior.m1_melt, aes(x = value, y =factor(variable, level=level_order3), fill = variable)) +
+  stat_halfeye(alpha=.7) +
   geom_vline(aes(xintercept=0), 
              color="black", size=1, linetype="dashed")+
   ylab("Probability density") +
-  theme_classic() + guides(fill="none") + xlab("")
-
-#PROTEASE
-
-#Fig2D
-plot(data_filt$leaf1_percent_N ~ data_filt$cumulative_protease_nM_min_scaled, 
-     pch=21, bg=c("black"), cex.lab = 2, cex.axis = 1.5,
-     xlab="Cumulative protease rate (scaled)", 
-     ylab="Leaf Nitrogen (%)", par(mar=c(6,6,4,4)))
-
-# predictive distribution
-preds <- posterior_predict(m1, 
-                           ndraws = 1000
-)
-#This "for loop" will plot all of the predictions from our posterior (for this set of values of our IVs), generated by each row (sample) from our posterior.
-# The first part (for(i in...)) will repeat the subsequent action for each row [i] in our posterior (so each  MCMC sample):
-
-x <- for(i in 1:nrow(preds)){ 
-  curve(exp(      #Inverse Link function for gamma
-    posterior.m1$b_Intercept[i]+ #Posterior for intercept
-      posterior.m1$b_cumulative_chitinase_uM_min_scaled[i]*0 + 
-      posterior.m1$b_cumulative_protease_nM_min_scaled[i]*x),
-    add=T, # Add to our existing plot
-    col=rgb(0,0,0,0.01)) }
-
-#CHITINASE
-# predictive distribution
-plot(data_filt$leaf1_percent_N~data_filt$cumulative_chitinase_uM_min_scaled, 
-     pch=21, bg=c("black"),cex.lab = 2, cex.axis = 1.5,
-     xlab="Cumulative chitinase rate (scaled)",
-     ylab="Leaf Nitrogen (%)", par(mar=c(6,6,4,4))) 
-
-x <- for(i in 1:nrow(preds)){ 
-  curve(exp(      #Inverse Link function for gamma
-    posterior.m1$b_Intercept[i]+ #Posterior for intercept
-      posterior.m1$b_cumulative_protease_nM_min_scaled[i]*0 + # holding protease density at mean
-      posterior.m1$b_cumulative_chitinase_uM_min_scaled[i]*x),
-    add=T, # Add to our existing plot
-    col=rgb(0,0,0,0.01)) }
+  theme_classic() + guides(fill="none") + xlab("")+
+  scale_fill_manual(values=c("#5C4033","#004488", "#ffaf49", "#44b7c2", "gray", "forestgreen", "firebrick3"))+
+  theme(axis.text.y=element_blank())
+  
