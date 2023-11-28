@@ -500,12 +500,6 @@ ggplot(data=data_filt,aes(x = treatment, y = new_leaves, group_by=treatment,fill
 
 glm_treatment_newleaves<- brm(new_leaves ~ treatment, data= data_filt)
 summary(glm_treatment_newleaves)
-mcmc_plot(glm_treatment_newleaves)
-posterior_interval(glm_treatment_newleaves, prob=.95)
-a <- as.data.frame(glm_treatment_newleaves)
-CommC <- a %>% filter(b_treatmentCommC >0)
-nrow(CommC)/nrow(a) 
-
 posterior7 <- mcmc_intervals_data(glm_treatment_newleaves, 
                                   prob_outer=0.95,
                                   prob=0.5)
@@ -528,7 +522,7 @@ ggplot(posterior7, aes(x = parameter,
                   size = 3/4) +
   scale_color_manual(name="",
                      values = c("grey60", "#484c8d")) +
-  scale_shape_manual(values=c(16, 17), 
+  scale_shape_manual(values=c(17), 
                      labels=c("95% CI does\nnot contain zero", 
                               "95% CI\ncontains zero"))+
   coord_flip() +theme_bw() + 
@@ -537,7 +531,7 @@ ggplot(posterior7, aes(x = parameter,
         axis.title = element_text(size=7), 
         legend.text = element_text(size=7)) +
   xlab(NULL) +
-  ylab("Probability of effect of\non New Pitchers ")+
+  ylab("Estimated effect on pitchers gained/lost")+
   guides(linetype=FALSE) + theme(legend.position = "none")
 
 ####Plant Nutrients ####
