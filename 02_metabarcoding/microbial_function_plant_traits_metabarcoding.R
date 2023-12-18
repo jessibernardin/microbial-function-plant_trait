@@ -342,6 +342,19 @@ ad.16s.treat
 pw.ad.16s.treat <- pairwise.adonis2(uu.dist.16s.treat ~ treatment/week, data=data_merge2)
 pw.ad.16s.treat 
 
+# beta disper to check dispersion
+uu.bd <- betadisper(vegdist(uu.dist.16s.treat), data_merge2$treatment)
+uu.bd
+boxplot(uu.bd)
+anova(uu.bd)# p=0.08651
+TukeyHSD(uu.bd)
+
+uu.bdday <- betadisper(vegdist(uu.dist.16s.treat), data_merge2$week)
+uu.bdday
+boxplot(uu.bdday)
+anova(uu.bdday)# p=0.07222
+TukeyHSD(uu.bdday)
+
 #### Mantel Test (filtered to three treatments) ####
 data_merge_uu <- data_merge2 %>% drop_na(chitinase_rate_uM_per_min)
 data_merge_uu <- data_merge_uu %>% drop_na(protease_rate_nM_per_min)
