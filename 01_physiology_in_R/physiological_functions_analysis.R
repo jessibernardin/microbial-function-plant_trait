@@ -495,8 +495,8 @@ ggplot(posterior6, aes(x = parameter,
 ggplot(data=data_filt,aes(x = treatment, y = new_leaves, group_by=treatment,fill = treatment)) +geom_boxplot(outlier.shape=NA, size=1, alpha=.7)+
   geom_jitter(aes(color=treatment),size=3) + theme_classic() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))+
-  scale_color_manual(values=c("gray","#5C4033", "#014b7a", "#ffaf49", "#44b7c2"))+
-  scale_fill_manual(values=c("gray","#5C4033", "#014b7a", "#ffaf49", "#44b7c2"))
+  scale_color_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))+
+  scale_fill_manual(values=c("#5C4033", "#014b7a", "#ffaf49", "#44b7c2", "gray"))
 
 glm_treatment_newleaves<- brm(new_leaves ~ treatment, data= data_filt)
 summary(glm_treatment_newleaves)
@@ -511,6 +511,15 @@ posterior7$nonzero[is.na(posterior7$nonzero)] <- "zero"
 posterior7<- posterior7[1:5,]
 level_order <- c("b_treatmentWATER", "b_treatmentCommC", "b_treatmentCommB","b_treatmentCommA", "b_Intercept") 
 posterior7$parameter <- factor(posterior7$parameter, level = level_order)
+
+#percent positive for CommC
+posterior_glm_treatment_newleaves <- as.data.frame(glm_treatment_newleaves)
+CommC_leaves <- posterior_glm_treatment_newleaves %>% filter(b_treatmentCommC <0)
+nrow(CommC_leaves)/nrow(posterior_glm_treatment_newleaves) #0.9655
+
+#estimate of effect
+glm_treatment_newleaves
+exp(1.40)
 
 #FigS7H
 ggplot(posterior7, aes(x = parameter,
